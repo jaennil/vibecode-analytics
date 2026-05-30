@@ -1,0 +1,36 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Live Token Monitor" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Reading Claude Code and Codex logs locally
+    - generic [ref=e7]:
+      - generic [ref=e8]: waiting
+      - generic [ref=e9]: offline
+  - region "summary" [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]: Last Turn
+      - strong [ref=e13]: "0"
+      - generic [ref=e14]: no data
+    - generic [ref=e15]:
+      - generic [ref=e16]: Input
+      - strong [ref=e17]: "0"
+      - generic [ref=e18]: fresh + cache
+    - generic [ref=e19]:
+      - generic [ref=e20]: Output
+      - strong [ref=e21]: "0"
+      - generic [ref=e22]: answer tokens
+    - generic [ref=e23]:
+      - generic [ref=e24]: Spike
+      - strong [ref=e25]: "0"
+      - generic [ref=e26]: max turn
+  - generic [ref=e28]:
+    - heading "Per-turn tokens" [level=2] [ref=e29]
+    - generic [ref=e30]:
+      - generic [ref=e31]: fresh input
+      - generic [ref=e33]: cache
+      - generic [ref=e35]: output
+      - generic [ref=e37]: reasoning
+  - generic [ref=e40]:
+    - heading "Context / limits" [level=2] [ref=e43]
+    - heading "Latest events" [level=2] [ref=e47]
+  - heading "Watched files" [level=2] [ref=e50]

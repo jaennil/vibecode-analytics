@@ -1,0 +1,15 @@
+{
+  "name": "live-token-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local live dashboard for Codex CLI and Claude Code token usage spikes.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "echarts": "^6.1.0"
+  }
+}
