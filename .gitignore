@@ -1,2 +1,10 @@
 node_modules/
 data/usage-history.jsonl
+data/usage.db*
+dist/
+tmp/
+tsconfig.tsbuildinfo
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+backend/tmp/
+.playwright-mcp/
