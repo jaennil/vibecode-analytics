@@ -44,6 +44,17 @@ type Health struct {
 	DatabasePath string    `json:"databasePath"`
 }
 
+type Metrics struct {
+	GeneratedAt time.Time
+	Health      Health
+	Sources     []SourceMetrics
+}
+
+type SourceMetrics struct {
+	Source  string
+	Summary domain.Summary
+}
+
 func New(cfg config.Config, st *store.Store) *Service {
 	return &Service{cfg: cfg, store: st}
 }
@@ -151,6 +162,25 @@ func (s *Service) Summary(ctx context.Context, query domain.Query) (domain.Summa
 		return domain.Summary{}, err
 	}
 	return s.store.Summary(ctx, query, s.cfg.MaxPoints, s.cfg.HistoryMaxPoints)
+}
+
+func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
+	if err := s.refreshIfNeeded(ctx); err != nil {
+		return Metrics{}, err
+	}
+	metrics := Metrics{
+		GeneratedAt: time.Now().UTC(),
+		Health:      s.Health(),
+		Sources:     make([]SourceMetrics, 0, 3),
+	}
+	for _, source := range []string{"all", domain.SourceCodex, domain.SourceClaude} {
+		summary, err := s.store.Summary(ctx, domain.Query{Range: "all", Source: source}, s.cfg.MaxPoints, s.cfg.HistoryMaxPoints)
+		if err != nil {
+			return Metrics{}, err
+		}
+		metrics.Sources = append(metrics.Sources, SourceMetrics{Source: source, Summary: summary})
+	}
+	return metrics, nil
 }
 
 func (s *Service) refreshIfNeeded(ctx context.Context) error {

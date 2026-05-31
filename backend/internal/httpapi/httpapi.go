@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"live-token-monitor/internal/domain"
 	"live-token-monitor/internal/service"
@@ -21,6 +23,7 @@ func New(svc *service.Service, corsOrigins []string) http.Handler {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v2/health", api.handleHealth)
+	mux.HandleFunc("/metrics", api.handleMetrics)
 	mux.HandleFunc("/api/v2/refresh", api.handleRefresh)
 	mux.HandleFunc("/api/v2/events", api.handleEvents)
 	mux.HandleFunc("/api/v2/prompts", api.handlePrompts)
@@ -52,6 +55,20 @@ func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.service.Health())
+}
+
+func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+	metrics, err := a.service.Metrics(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprint(w, prometheusText(metrics))
 }
 
 func (a *API) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +218,62 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+}
+
+func prometheusText(metrics service.Metrics) string {
+	var b strings.Builder
+	writeMetricHeader(&b, "live_token_monitor_up", "API health status.", "gauge")
+	fmt.Fprintf(&b, "live_token_monitor_up %d\n", boolValue(metrics.Health.Status == "ok"))
+	writeMetricHeader(&b, "live_token_monitor_last_refresh_timestamp_seconds", "Unix timestamp of the latest successful file refresh.", "gauge")
+	fmt.Fprintf(&b, "live_token_monitor_last_refresh_timestamp_seconds %.0f\n", unixSeconds(metrics.Health.LastRefresh))
+	writeMetricHeader(&b, "live_token_monitor_last_refresh_files", "Files scanned in the latest refresh.", "gauge")
+	fmt.Fprintf(&b, "live_token_monitor_last_refresh_files %d\n", metrics.Health.LastFiles)
+	writeMetricHeader(&b, "live_token_monitor_last_refresh_events", "Events parsed in the latest refresh.", "gauge")
+	fmt.Fprintf(&b, "live_token_monitor_last_refresh_events %d\n", metrics.Health.LastEvents)
+	writeMetricHeader(&b, "live_token_monitor_last_refresh_prompts", "Prompts parsed in the latest refresh.", "gauge")
+	fmt.Fprintf(&b, "live_token_monitor_last_refresh_prompts %d\n", metrics.Health.LastPrompts)
+	writeMetricHeader(&b, "live_token_monitor_events", "Stored token usage events by source.", "gauge")
+	for _, source := range metrics.Sources {
+		fmt.Fprintf(&b, "live_token_monitor_events{source=%q} %d\n", source.Source, source.Summary.Events)
+	}
+	writeMetricHeader(&b, "live_token_monitor_prompts", "Stored prompts by source.", "gauge")
+	for _, source := range metrics.Sources {
+		fmt.Fprintf(&b, "live_token_monitor_prompts{source=%q} %d\n", source.Source, source.Summary.Prompts)
+	}
+	writeMetricHeader(&b, "live_token_monitor_tokens", "Stored token counts by source and token category.", "gauge")
+	for _, source := range metrics.Sources {
+		writeTokenMetric(&b, source.Source, "new", source.Summary.Totals.NewTokens)
+		writeTokenMetric(&b, source.Source, "input", source.Summary.Totals.Input)
+		writeTokenMetric(&b, source.Source, "cache_create", source.Summary.Totals.CacheCreate)
+		writeTokenMetric(&b, source.Source, "cache_read", source.Summary.Totals.CacheRead)
+		writeTokenMetric(&b, source.Source, "output", source.Summary.Totals.Output)
+		writeTokenMetric(&b, source.Source, "reasoning", source.Summary.Totals.Reasoning)
+		writeTokenMetric(&b, source.Source, "total", source.Summary.Totals.Total)
+	}
+	return b.String()
+}
+
+func writeMetricHeader(b *strings.Builder, name string, help string, typ string) {
+	fmt.Fprintf(b, "# HELP %s %s\n", name, help)
+	fmt.Fprintf(b, "# TYPE %s %s\n", name, typ)
+}
+
+func writeTokenMetric(b *strings.Builder, source string, kind string, value int64) {
+	fmt.Fprintf(b, "live_token_monitor_tokens{source=%q,kind=%q} %d\n", source, kind, value)
+}
+
+func boolValue(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func unixSeconds(value time.Time) float64 {
+	if value.IsZero() {
+		return 0
+	}
+	return float64(value.UnixNano()) / float64(time.Second)
 }
 
 func firstNonEmpty(values ...string) string {

@@ -40,6 +40,30 @@ func TestInvalidRange(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpoint(t *testing.T) {
+	handler := testHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`live_token_monitor_up 1`,
+		`live_token_monitor_events{source="all"} 1`,
+		`live_token_monitor_events{source="codex"} 1`,
+		`live_token_monitor_tokens{source="all",kind="total"} 3`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in body=%s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
 func TestCORSPreflight(t *testing.T) {
 	handler := testHandler(t)
 	req := httptest.NewRequest(http.MethodOptions, "/api/v2/events", nil)
