@@ -22,6 +22,7 @@ import type { DailyTotal, DashboardData, Prompt, ProjectSummary, Range, SessionS
 import "./styles.css";
 
 type Tab = "dashboard" | "projects" | "sessions" | "detail" | "raw";
+type DetailTarget = { type: "project" | "session"; id: string };
 type GlobalChartMode = "line" | "breakdown" | "new" | "total" | "cacheRead";
 type GlobalScaleMode = "log" | "linear";
 
@@ -39,10 +40,11 @@ function App() {
   const [projectId, setProjectId] = useState("all");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [detailSession, setDetailSession] = useState<string | null>(null);
+  const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const projectOptionsData = useMemo(() => filterDashboardData(data, source, "all"), [data, source]);
   const viewData = useMemo(() => filterDashboardData(data, source, projectId), [data, projectId, source]);
 
   useEffect(() => {
@@ -74,12 +76,18 @@ function App() {
   const visibleProjects = useMemo(() => filterProjects(viewData?.projects ?? [], search), [search, viewData?.projects]);
   const visibleSessions = useMemo(() => filterSessions(viewData?.sessions ?? [], search), [search, viewData?.sessions]);
   const detailEvents = useMemo(
-    () => (detailSession ? (viewData?.events ?? []).filter((event) => event.sessionId === detailSession) : []),
-    [detailSession, viewData?.events],
+    () =>
+      detailTarget
+        ? (viewData?.events ?? []).filter((event) => (detailTarget.type === "session" ? event.sessionId === detailTarget.id : event.projectId === detailTarget.id))
+        : [],
+    [detailTarget, viewData?.events],
   );
   const detailPrompts = useMemo(
-    () => (detailSession ? (viewData?.prompts ?? []).filter((prompt) => prompt.sessionId === detailSession) : []),
-    [detailSession, viewData?.prompts],
+    () =>
+      detailTarget
+        ? (viewData?.prompts ?? []).filter((prompt) => (detailTarget.type === "session" ? prompt.sessionId === detailTarget.id : prompt.projectId === detailTarget.id))
+        : [],
+    [detailTarget, viewData?.prompts],
   );
 
   return (
@@ -115,7 +123,7 @@ function App() {
             onChange={(event) => {
               setSource(event.target.value as Source);
               setProjectId("all");
-              setDetailSession(null);
+              setDetailTarget(null);
             }}
           >
             <option value="all">All</option>
@@ -129,11 +137,11 @@ function App() {
             value={projectId}
             onChange={(event) => {
               setProjectId(event.target.value);
-              setDetailSession(null);
+              setDetailTarget(null);
             }}
           >
             <option value="all">All projects</option>
-            {(viewData?.projects ?? []).map((project) => (
+            {(projectOptionsData?.projects ?? []).map((project) => (
               <option key={project.id} value={project.id}>
                 {project.source} / {project.name}
               </option>
@@ -155,19 +163,29 @@ function App() {
       </nav>
 
       {tab === "dashboard" && <Dashboard data={viewData} />}
-      {tab === "projects" && <Projects projects={visibleProjects} events={viewData?.events ?? []} prompts={viewData?.prompts ?? []} />}
+      {tab === "projects" && (
+        <Projects
+          projects={visibleProjects}
+          events={viewData?.events ?? []}
+          prompts={viewData?.prompts ?? []}
+          onOpen={(id) => {
+            setDetailTarget({ type: "project", id });
+            setTab("detail");
+          }}
+        />
+      )}
       {tab === "sessions" && (
         <Sessions
           sessions={visibleSessions}
           events={viewData?.events ?? []}
           prompts={viewData?.prompts ?? []}
           onOpen={(id) => {
-            setDetailSession(id);
+            setDetailTarget({ type: "session", id });
             setTab("detail");
           }}
         />
       )}
-      {tab === "detail" && <Detail sessionId={detailSession} events={detailEvents} prompts={detailPrompts} sessions={viewData?.sessions ?? []} />}
+      {tab === "detail" && <Detail target={detailTarget} events={detailEvents} prompts={detailPrompts} projects={viewData?.projects ?? []} sessions={viewData?.sessions ?? []} />}
       {tab === "raw" && <RawTable events={viewData?.events ?? []} />}
     </main>
   );
@@ -195,7 +213,7 @@ function Dashboard({ data }: { data: DashboardData | null }) {
   );
 }
 
-function Projects({ projects, events, prompts }: { projects: ProjectSummary[]; events: TokenEvent[]; prompts: Prompt[] }) {
+function Projects({ projects, events, prompts, onOpen }: { projects: ProjectSummary[]; events: TokenEvent[]; prompts: Prompt[]; onOpen: (id: string) => void }) {
   if (!projects.length) return <Empty text="No projects match the current filters." />;
   return (
     <section className="grid-list">
@@ -203,7 +221,14 @@ function Projects({ projects, events, prompts }: { projects: ProjectSummary[]; e
         const projectEvents = events.filter((event) => event.projectId === project.id);
         const projectPrompts = prompts.filter((prompt) => prompt.projectId === project.id);
         return (
-          <ChartCard key={project.id} title={`${project.source} / ${project.name}`} subtitle={compactPath(project.path)} events={projectEvents} prompts={projectPrompts}>
+          <ChartCard
+            key={project.id}
+            title={`${project.source} / ${project.name}`}
+            subtitle={compactPath(project.path)}
+            events={projectEvents}
+            prompts={projectPrompts}
+            action={<button onClick={() => onOpen(project.id)}>Open</button>}
+          >
             <Stat label="events" value={project.events} />
             <Stat label="new" value={formatNumber(project.totals.newTokens)} />
             <Stat label="spike" value={formatNumber(project.spikeNewTokens)} />
@@ -250,9 +275,22 @@ function Sessions({
   );
 }
 
-function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | null; events: TokenEvent[]; prompts: Prompt[]; sessions: SessionSummary[] }) {
+function Detail({
+  target,
+  events,
+  prompts,
+  projects,
+  sessions,
+}: {
+  target: DetailTarget | null;
+  events: TokenEvent[];
+  prompts: Prompt[];
+  projects: ProjectSummary[];
+  sessions: SessionSummary[];
+}) {
   const orderedEvents = useMemo(() => sortEventsByTime(events), [events]);
-  const session = sessions.find((item) => item.id === sessionId);
+  const session = target?.type === "session" ? sessions.find((item) => item.id === target.id) : null;
+  const project = target?.type === "project" ? projects.find((item) => item.id === target.id) : null;
   const [minutes, setMinutes] = useState(0);
   const [promptLimit, setPromptLimit] = useState(0);
   const [showSum, setShowSum] = useState(false);
@@ -270,10 +308,10 @@ function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | 
       const spike = session?.spikeEventId ? visible.events.find((event) => event.id === session.spikeEventId) : undefined;
       return spike?.id ?? visible.events.at(-1)?.id ?? null;
     });
-  }, [session?.spikeEventId, sessionId, visible.events]);
+  }, [session?.spikeEventId, target?.id, target?.type, visible.events]);
 
-  if (!sessionId) return <Empty text="Select a session from the Sessions tab to inspect it." />;
-  if (!orderedEvents.length) return <Empty text="No token events are available for this session in the loaded range." />;
+  if (!target) return <Empty text="Open a project or session to inspect it." />;
+  if (!orderedEvents.length) return <Empty text="No token events are available for this detail target in the loaded range." />;
   if (!visible.events.length) return <Empty text="No token events match the detail filters." />;
   const selectedEvent = visible.events.find((event) => event.id === selectedEventId) ?? visible.events.at(-1)!;
   const eventPrompts = promptsForEventWindow(visible.prompts, selectedEvent);
@@ -291,7 +329,7 @@ function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | 
   };
   return (
     <section className="panel detail">
-      <PanelHead title={session ? `${session.source} / ${session.projectName} / ${session.name}` : "Session detail"} meta={session ? compactPath(session.projectPath || session.file) : ""} />
+      <PanelHead title={detailTitle(target, project, session)} meta={detailMeta(target, project, session)} />
       <section className="metrics compact">
         <Metric label="Events" value={String(visible.events.length)} note={`${visible.prompts.length} prompts`} />
         <Metric label="New Tokens" value={formatNumber(sums.newTokens)} note="visible window" />
@@ -1395,6 +1433,16 @@ function PanelHead({ title, meta }: { title: string; meta: string }) {
 
 function Empty({ text }: { text: string }) {
   return <div className="empty">{text}</div>;
+}
+
+function detailTitle(target: DetailTarget, project: ProjectSummary | null | undefined, session: SessionSummary | null | undefined): string {
+  if (target.type === "project") return project ? `${project.source} / ${project.name}` : "Project detail";
+  return session ? `${session.source} / ${session.projectName} / ${session.name}` : "Session detail";
+}
+
+function detailMeta(target: DetailTarget, project: ProjectSummary | null | undefined, session: SessionSummary | null | undefined): string {
+  if (target.type === "project") return project ? compactPath(project.path) : "";
+  return session ? compactPath(session.projectPath || session.file) : "";
 }
 
 function filterDashboardData(data: DashboardData | null, source: Source, projectId: string): DashboardData | null {
