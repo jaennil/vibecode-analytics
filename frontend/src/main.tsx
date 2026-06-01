@@ -369,7 +369,6 @@ function Detail({
           hasNext={selectedIndex < visible.events.length - 1}
         />
       </div>
-      <SessionEventTable events={visible.events} selectedEventId={selectedEvent.id} onSelectEvent={selectEvent} />
     </section>
   );
 }
@@ -624,60 +623,6 @@ function TurnInspector({
         {selectedPrompt && <small>{selectedPrompt.imageCount ? `${selectedPrompt.imageCount} images` : "Text prompt"}</small>}
       </section>
     </aside>
-  );
-}
-
-function SessionEventTable({ events, selectedEventId, onSelectEvent }: { events: TokenEvent[]; selectedEventId: string; onSelectEvent: (eventId: string) => void }) {
-  return (
-    <section className="session-event-list">
-      <div className="inspector-section-head">
-        <h3>Session events</h3>
-        <small>{events.length} turns</small>
-      </div>
-      <div className="table-wrap">
-        <table className="session-event-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Model</th>
-              <th>New</th>
-              <th>Fresh</th>
-              <th>Cache write</th>
-              <th>Cache read</th>
-              <th>Output</th>
-              <th>Reasoning</th>
-              <th>Context</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...events].reverse().map((event) => (
-              <tr
-                key={event.id}
-                className={event.id === selectedEventId ? "selected" : ""}
-                tabIndex={0}
-                onClick={() => onSelectEvent(event.id)}
-                onKeyDown={(keyEvent) => {
-                  if (keyEvent.key === "Enter" || keyEvent.key === " ") {
-                    keyEvent.preventDefault();
-                    onSelectEvent(event.id);
-                  }
-                }}
-              >
-                <td>{new Date(event.timestamp).toLocaleString()}</td>
-                <td>{event.model || "-"}</td>
-                <td>{formatNumber(newTokens(event))}</td>
-                <td>{formatNumber(event.input)}</td>
-                <td>{formatNumber(event.cacheCreate)}</td>
-                <td>{formatNumber(event.cacheRead)}</td>
-                <td>{formatNumber(event.output)}</td>
-                <td>{formatNumber(event.reasoning)}</td>
-                <td>{event.contextPercent == null ? "-" : formatPercent(event.contextPercent)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }
 

@@ -607,26 +607,6 @@ input {
   overflow-wrap: anywhere;
 }
 
-.session-event-list {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.session-event-list .table-wrap {
-  max-height: 360px;
-  margin-top: 10px;
-}
-
-.session-event-table tr {
-  cursor: pointer;
-}
-
-.session-event-table tbody tr:hover,
-.session-event-table tbody tr.selected {
-  background: rgba(118, 217, 159, 0.1);
-}
-
 .chart-tooltip-row {
   display: flex;
   min-width: 180px;
