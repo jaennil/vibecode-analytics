@@ -5,6 +5,7 @@ import type { EChartsOption } from "echarts";
 import { fetchDashboard } from "./api";
 import {
   compactPath,
+  filterGlobalChartWindow,
   findNearestEventForPrompt,
   formatAverage,
   formatNumber,
@@ -695,23 +696,90 @@ function DailyChart({ data }: { data: Array<{ day: string; total: number; averag
 function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts: Prompt[] }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  const [minutes, setMinutes] = useState(0);
+  const [promptLimit, setPromptLimit] = useState(0);
+  const [hover, setHover] = useState<GlobalBarHover | null>(null);
+  const visible = useMemo(() => filterGlobalChartWindow(events, prompts, minutes, promptLimit), [events, minutes, promptLimit, prompts]);
 
   useEffect(() => {
-    if (!ref.current) return;
-    if (!events.length) {
+    if (!visible.events.length) {
       disposeChart(chartRef);
+      setHover(null);
       return;
     }
+    if (!ref.current) return;
     const chart = chartInstance(chartRef, ref.current);
-    chart.setOption(globalSessionOption(events, prompts), { notMerge: true });
+    chart.setOption(globalSessionOption(visible.events, visible.prompts), { notMerge: true });
     const resize = () => chart.resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, [events, prompts]);
+  }, [visible.events, visible.prompts]);
 
   useEffect(() => () => disposeChart(chartRef), []);
   if (!events.length) return <div className="chart-empty">No session events in the selected range.</div>;
-  return <div ref={ref} className="global-session-chart" role="img" aria-label="Token events across all loaded sessions" />;
+  return (
+    <>
+      <div className="global-chart-toolbar">
+        <label>
+          <span>Last prompts</span>
+          <select value={promptLimit} onChange={(event) => setPromptLimit(Number(event.target.value))}>
+            <option value={0}>All prompts</option>
+            <option value={5}>Last 5 prompts</option>
+            <option value={10}>Last 10 prompts</option>
+            <option value={25}>Last 25 prompts</option>
+            <option value={50}>Last 50 prompts</option>
+          </select>
+        </label>
+        <label>
+          <span>Last minutes</span>
+          <select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))}>
+            <option value={0}>All loaded time</option>
+            <option value={15}>Last 15 minutes</option>
+            <option value={30}>Last 30 minutes</option>
+            <option value={60}>Last 60 minutes</option>
+            <option value={180}>Last 180 minutes</option>
+          </select>
+        </label>
+        <small>{visible.events.length} visible events / {visible.prompts.length} visible prompts</small>
+      </div>
+      {visible.events.length ? (
+        <div
+          className="global-chart-stage"
+          onMouseLeave={() => setHover(null)}
+          onMouseMove={(pointer) => {
+            const bounds = pointer.currentTarget.getBoundingClientRect();
+            setHover(globalBarHover(chartRef.current, visible.events, pointer.clientX - bounds.left, pointer.clientY - bounds.top));
+          }}
+        >
+          <div ref={ref} className="global-session-chart" role="img" aria-label="Token events across all loaded sessions" />
+          {hover && <GlobalBarTooltip hover={hover} />}
+        </div>
+      ) : (
+        <div className="chart-empty">No session events match the chart filters.</div>
+      )}
+    </>
+  );
+}
+
+interface GlobalBarHover {
+  event: TokenEvent;
+  left: number;
+  top: number;
+}
+
+function GlobalBarTooltip({ hover }: { hover: GlobalBarHover }) {
+  return (
+    <div className="global-bar-tooltip" style={{ left: hover.left, top: hover.top }}>
+      <strong>{new Date(hover.event.timestamp).toLocaleString()}</strong>
+      <div className="chart-tooltip-meta">{hover.event.source} / {hover.event.projectName} / {hover.event.sessionName}</div>
+      {visibleBreakdownRows(hover.event).map((row) => (
+        <div className="chart-tooltip-row" key={row.key}>
+          <span>{row.label}</span>
+          <b>{formatNumber(row.value)}</b>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function chartInstance(ref: React.MutableRefObject<echarts.ECharts | null>, element: HTMLDivElement): echarts.ECharts {
@@ -774,13 +842,7 @@ function globalSessionOption(events: TokenEvent[], prompts: Prompt[]): EChartsOp
       { left: 66, right: 24, top: "75%", height: 28 },
     ],
     legend: { top: 0, textStyle: { color: "#a9bbb7" } },
-    tooltip: {
-      trigger: "item",
-      backgroundColor: "#132024",
-      borderColor: "#39525a",
-      textStyle: { color: "#edf6f2" },
-      formatter: (params: unknown) => globalSessionTooltip(params, visibleEvents, prompts),
-    },
+    tooltip: { show: false },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     xAxis: [detailTimeAxis(0, false), detailTimeAxis(1, true)],
     yAxis: [
@@ -820,24 +882,19 @@ function globalSessionOption(events: TokenEvent[], prompts: Prompt[]): EChartsOp
   };
 }
 
-function globalSessionTooltip(params: unknown, events: TokenEvent[], prompts: Prompt[]): string {
-  const value = (params as { data?: unknown })?.data;
-  const id = chartDataId(value);
-  const event = events.find((candidate) => candidate.id === id);
-  if (event) {
-    return [
-      `<strong>${new Date(event.timestamp).toLocaleString()}</strong>`,
-      `<div class="chart-tooltip-meta">${event.source} / ${event.projectName} / ${event.sessionName}</div>`,
-      ...visibleBreakdownRows(event).map((row) => `<div class="chart-tooltip-row"><span>${row.label}</span><b>${formatNumber(row.value)}</b></div>`),
-    ].join("");
-  }
-  const prompt = prompts.find((candidate) => candidate.id === id);
-  if (!prompt) return "";
-  return [
-    `<strong>${new Date(prompt.timestamp).toLocaleString()}</strong>`,
-    `<div class="chart-tooltip-meta">${prompt.source} / ${prompt.projectName} / ${prompt.sessionName}</div>`,
-    `<div class="chart-tooltip-row"><span>Prompt</span><b>${prompt.imageCount ? `${prompt.imageCount} images` : "text"}</b></div>`,
-  ].join("");
+function globalBarHover(chart: echarts.ECharts | null, events: TokenEvent[], offsetX: number, offsetY: number): GlobalBarHover | null {
+  if (!chart || !chart.containPixel({ gridIndex: 0 }, [offsetX, offsetY])) return null;
+  const nearest = events.reduce<{ event: TokenEvent; distance: number } | null>((best, event) => {
+    const x = Number(chart.convertToPixel({ xAxisIndex: 0 }, event.timestamp));
+    const distance = Math.abs(x - offsetX);
+    return !best || distance < best.distance ? { event, distance } : best;
+  }, null);
+  if (!nearest || nearest.distance > 28) return null;
+  return {
+    event: nearest.event,
+    left: Math.min(chart.getWidth() - 130, Math.max(130, Number(chart.convertToPixel({ xAxisIndex: 0 }, nearest.event.timestamp)))),
+    top: Math.max(190, offsetY - 12),
+  };
 }
 
 function sessionDetailOption(

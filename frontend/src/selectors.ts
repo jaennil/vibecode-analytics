@@ -6,6 +6,11 @@ export interface BreakdownRow {
   value: number;
 }
 
+export interface GlobalChartWindow {
+  events: TokenEvent[];
+  prompts: Prompt[];
+}
+
 export function newTokens(event?: Pick<TokenEvent, "input" | "cacheCreate" | "output" | "reasoning"> | null): number {
   if (!event) return 0;
   return Number(event.input || 0) + Number(event.cacheCreate || 0) + Number(event.output || 0) + Number(event.reasoning || 0);
@@ -82,6 +87,28 @@ export function findNearestEventForPrompt(events: TokenEvent[], prompt: Prompt):
     const eventDistance = Math.abs(new Date(event.timestamp).getTime() - promptTime);
     return eventDistance < nearestDistance ? event : nearest;
   }, null);
+}
+
+export function filterGlobalChartWindow(events: TokenEvent[], prompts: Prompt[], minutes: number, promptLimit: number): GlobalChartWindow {
+  const sortedEvents = sortEventsByTime(events);
+  const sortedPrompts = [...prompts].sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+  const latest = Math.max(
+    sortedEvents.at(-1) ? new Date(sortedEvents.at(-1)!.timestamp).getTime() : Number.NEGATIVE_INFINITY,
+    sortedPrompts.at(-1) ? new Date(sortedPrompts.at(-1)!.timestamp).getTime() : Number.NEGATIVE_INFINITY,
+  );
+  const cutoffs = [];
+  if (minutes > 0 && Number.isFinite(latest)) cutoffs.push(latest - minutes * 60 * 1000);
+  if (promptLimit > 0 && sortedPrompts.length) {
+    const firstVisiblePrompt = sortedPrompts[Math.max(0, sortedPrompts.length - promptLimit)];
+    cutoffs.push(new Date(firstVisiblePrompt.timestamp).getTime());
+  }
+  if (!cutoffs.length) return { events: sortedEvents, prompts: sortedPrompts };
+  const cutoff = Math.max(...cutoffs);
+  const visiblePrompts = sortedPrompts.filter((prompt) => new Date(prompt.timestamp).getTime() >= cutoff);
+  return {
+    events: sortedEvents.filter((event) => new Date(event.timestamp).getTime() >= cutoff),
+    prompts: promptLimit > 0 ? visiblePrompts.slice(-promptLimit) : visiblePrompts,
+  };
 }
 
 export function compactPath(value: string, limit = 72): string {

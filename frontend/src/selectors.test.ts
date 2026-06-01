@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compactPath,
+  filterGlobalChartWindow,
   findNearestEventForPrompt,
   findSpikeEvent,
   formatAverage,
@@ -108,5 +109,40 @@ describe("selectors", () => {
       event("late", 1, 1, { timestamp: "2026-05-01T10:05:00Z" }),
     ];
     expect(findNearestEventForPrompt(events, prompt("p1", "2026-05-01T10:04:00Z"))?.id).toBe("late");
+  });
+
+  it("filters the global chart by recent minutes relative to loaded data", () => {
+    const events = [
+      event("early", 1, 1, { timestamp: "2026-05-01T10:00:00Z" }),
+      event("middle", 1, 1, { timestamp: "2026-05-01T10:30:00Z" }),
+      event("latest", 1, 1, { timestamp: "2026-05-01T11:00:00Z" }),
+    ];
+    expect(filterGlobalChartWindow(events, [], 45, 0).events.map((item) => item.id)).toEqual(["middle", "latest"]);
+  });
+
+  it("filters the global chart from the earliest retained prompt", () => {
+    const events = [
+      event("early", 1, 1, { timestamp: "2026-05-01T10:00:00Z" }),
+      event("middle", 1, 1, { timestamp: "2026-05-01T10:30:00Z" }),
+      event("latest", 1, 1, { timestamp: "2026-05-01T11:00:00Z" }),
+    ];
+    const prompts = [
+      prompt("p1", "2026-05-01T09:55:00Z"),
+      prompt("p2", "2026-05-01T10:20:00Z"),
+      prompt("p3", "2026-05-01T10:50:00Z"),
+    ];
+    const window = filterGlobalChartWindow(events, prompts, 0, 2);
+    expect(window.events.map((item) => item.id)).toEqual(["middle", "latest"]);
+    expect(window.prompts.map((item) => item.id)).toEqual(["p2", "p3"]);
+  });
+
+  it("uses the narrower global chart window when filters are combined", () => {
+    const events = [
+      event("early", 1, 1, { timestamp: "2026-05-01T10:00:00Z" }),
+      event("middle", 1, 1, { timestamp: "2026-05-01T10:30:00Z" }),
+      event("latest", 1, 1, { timestamp: "2026-05-01T11:00:00Z" }),
+    ];
+    const prompts = [prompt("p1", "2026-05-01T10:10:00Z"), prompt("p2", "2026-05-01T10:20:00Z")];
+    expect(filterGlobalChartWindow(events, prompts, 15, 2).events.map((item) => item.id)).toEqual(["latest"]);
   });
 });

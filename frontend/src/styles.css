@@ -299,6 +299,25 @@ input {
   margin-top: 14px;
 }
 
+.global-chart-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.global-chart-toolbar label {
+  min-width: 180px;
+}
+
+.global-chart-toolbar select {
+  min-height: 36px;
+}
+
+.global-chart-toolbar small {
+  margin: 0 0 10px auto;
+}
+
 .global-session-chart {
   width: 100%;
   max-width: 100%;
@@ -306,6 +325,26 @@ input {
   height: min(62vh, 560px);
   min-height: 360px;
   overflow: hidden;
+}
+
+.global-chart-stage {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.global-bar-tooltip {
+  position: absolute;
+  z-index: 2;
+  width: 240px;
+  padding: 10px;
+  border: 1px solid #39525a;
+  border-radius: 6px;
+  background: #132024;
+  color: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
 }
 
 .chart-empty {
@@ -644,5 +683,17 @@ th {
   .global-session-chart {
     height: 430px;
     min-height: 320px;
+  }
+
+  .global-chart-toolbar {
+    display: grid;
+  }
+
+  .global-chart-toolbar label {
+    min-width: 0;
+  }
+
+  .global-chart-toolbar small {
+    margin: 0;
   }
 }
