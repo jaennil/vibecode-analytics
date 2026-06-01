@@ -42,6 +42,9 @@ func TestInvalidRange(t *testing.T) {
 
 func TestMetricsEndpoint(t *testing.T) {
 	handler := testHandler(t)
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/v2/events?range=all", nil)
+	eventsRec := httptest.NewRecorder()
+	handler.ServeHTTP(eventsRec, eventsReq)
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -54,6 +57,9 @@ func TestMetricsEndpoint(t *testing.T) {
 		`live_token_monitor_events{source="all"} 1`,
 		`live_token_monitor_events{source="codex"} 1`,
 		`live_token_monitor_tokens{source="all",kind="total"} 3`,
+		`live_token_monitor_http_requests_total{method="GET",route="/api/v2/events",status="200"} 1`,
+		`live_token_monitor_http_request_duration_seconds_count{method="GET",route="/api/v2/events"} 1`,
+		`live_token_monitor_http_requests_in_flight 0`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in body=%s", want, body)

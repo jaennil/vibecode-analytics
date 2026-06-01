@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"live-token-monitor/internal/domain"
@@ -14,10 +16,11 @@ import (
 type API struct {
 	service *service.Service
 	origins map[string]bool
+	metrics *httpMetrics
 }
 
 func New(svc *service.Service, corsOrigins []string) http.Handler {
-	api := &API{service: svc, origins: map[string]bool{}}
+	api := &API{service: svc, origins: map[string]bool{}, metrics: newHTTPMetrics()}
 	for _, origin := range corsOrigins {
 		api.origins[origin] = true
 	}
@@ -30,7 +33,7 @@ func New(svc *service.Service, corsOrigins []string) http.Handler {
 	mux.HandleFunc("/api/v2/projects", api.handleProjects)
 	mux.HandleFunc("/api/v2/sessions", api.handleSessions)
 	mux.HandleFunc("/api/v2/summary", api.handleSummary)
-	return api.cors(mux)
+	return api.cors(api.observe(mux))
 }
 
 func (a *API) cors(next http.Handler) http.Handler {
@@ -69,6 +72,7 @@ func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, prometheusText(metrics))
+	fmt.Fprint(w, a.metrics.prometheusText())
 }
 
 func (a *API) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +278,121 @@ func unixSeconds(value time.Time) float64 {
 		return 0
 	}
 	return float64(value.UnixNano()) / float64(time.Second)
+}
+
+var latencyBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
+
+type httpMetricKey struct {
+	method string
+	route  string
+	status int
+}
+
+type httpLatencyKey struct {
+	method string
+	route  string
+}
+
+type httpLatency struct {
+	count   uint64
+	sum     float64
+	buckets []uint64
+}
+
+type httpMetrics struct {
+	mu       sync.Mutex
+	inFlight int
+	requests map[httpMetricKey]uint64
+	latency  map[httpLatencyKey]*httpLatency
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func newHTTPMetrics() *httpMetrics {
+	return &httpMetrics{
+		requests: map[httpMetricKey]uint64{},
+		latency:  map[httpLatencyKey]*httpLatency{},
+	}
+}
+
+func (a *API) observe(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		a.metrics.changeInFlight(1)
+		defer a.metrics.changeInFlight(-1)
+		writer := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(writer, r)
+		a.metrics.observe(r.Method, routeLabel(r.URL.Path), writer.status, time.Since(start))
+	})
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (m *httpMetrics) changeInFlight(delta int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inFlight += delta
+}
+
+func (m *httpMetrics) observe(method string, route string, status int, duration time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requests[httpMetricKey{method: method, route: route, status: status}]++
+	key := httpLatencyKey{method: method, route: route}
+	latency := m.latency[key]
+	if latency == nil {
+		latency = &httpLatency{buckets: make([]uint64, len(latencyBuckets))}
+		m.latency[key] = latency
+	}
+	seconds := duration.Seconds()
+	latency.count++
+	latency.sum += seconds
+	for i, bucket := range latencyBuckets {
+		if seconds <= bucket {
+			latency.buckets[i]++
+		}
+	}
+}
+
+func (m *httpMetrics) prometheusText() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var b strings.Builder
+	writeMetricHeader(&b, "live_token_monitor_http_requests_total", "HTTP requests by method, route, and status.", "counter")
+	for key, count := range m.requests {
+		fmt.Fprintf(&b, "live_token_monitor_http_requests_total{method=%q,route=%q,status=%q} %d\n", key.method, key.route, strconv.Itoa(key.status), count)
+	}
+	writeMetricHeader(&b, "live_token_monitor_http_request_duration_seconds", "HTTP request latency by method and route.", "histogram")
+	for key, latency := range m.latency {
+		for i, count := range latency.buckets {
+			fmt.Fprintf(&b, "live_token_monitor_http_request_duration_seconds_bucket{method=%q,route=%q,le=%q} %d\n", key.method, key.route, strconv.FormatFloat(latencyBuckets[i], 'f', -1, 64), count)
+		}
+		fmt.Fprintf(&b, "live_token_monitor_http_request_duration_seconds_bucket{method=%q,route=%q,le=\"+Inf\"} %d\n", key.method, key.route, latency.count)
+		fmt.Fprintf(&b, "live_token_monitor_http_request_duration_seconds_sum{method=%q,route=%q} %g\n", key.method, key.route, latency.sum)
+		fmt.Fprintf(&b, "live_token_monitor_http_request_duration_seconds_count{method=%q,route=%q} %d\n", key.method, key.route, latency.count)
+	}
+	writeMetricHeader(&b, "live_token_monitor_http_requests_in_flight", "HTTP requests currently being served.", "gauge")
+	fmt.Fprintf(&b, "live_token_monitor_http_requests_in_flight %d\n", m.inFlight)
+	return b.String()
+}
+
+func routeLabel(path string) string {
+	switch path {
+	case "/api/v2/health", "/api/v2/refresh", "/api/v2/events", "/api/v2/prompts", "/api/v2/projects", "/api/v2/sessions", "/api/v2/summary":
+		return path
+	default:
+		return "unknown"
+	}
 }
 
 func firstNonEmpty(values ...string) string {

@@ -21,7 +21,8 @@ The Go API listens on `http://127.0.0.1:8787`. In Compose, Vite proxies
 The Compose stack also starts Prometheus at `http://127.0.0.1:9090` and
 Grafana at `http://127.0.0.1:3000`. Grafana is provisioned with a Prometheus
 datasource and a "Live Token Monitor" dashboard. The default login is
-`admin` / `admin`.
+`admin` / `admin`. The dashboard includes API golden signals for request
+traffic, server error ratio, p95 latency, and in-flight request saturation.
 
 ## Layout
 
