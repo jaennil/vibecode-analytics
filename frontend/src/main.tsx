@@ -3,7 +3,18 @@ import { createRoot } from "react-dom/client";
 import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
 import { fetchDashboard } from "./api";
-import { compactPath, formatNumber, newTokens, promptsInWindow, tokenSums } from "./selectors";
+import {
+  compactPath,
+  findNearestEventForPrompt,
+  formatAverage,
+  formatNumber,
+  newTokens,
+  promptsForTurn,
+  promptsInWindow,
+  sortEventsByTime,
+  tokenSums,
+  visibleBreakdownRows,
+} from "./selectors";
 import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Source, TokenEvent } from "./types";
 import "./styles.css";
 
@@ -223,10 +234,39 @@ function Sessions({
 }
 
 function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | null; events: TokenEvent[]; prompts: Prompt[]; sessions: SessionSummary[] }) {
-  if (!sessionId) return <Empty text="Select a session from the Sessions tab to inspect it." />;
-  if (!events.length) return <Empty text="No token events are available for this session in the loaded range." />;
+  const orderedEvents = useMemo(() => sortEventsByTime(events), [events]);
   const session = sessions.find((item) => item.id === sessionId);
-  const sums = tokenSums(events);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!orderedEvents.length) {
+      setSelectedEventId(null);
+      return;
+    }
+    setSelectedEventId((current) => {
+      if (current && orderedEvents.some((event) => event.id === current)) return current;
+      const spike = session?.spikeEventId ? orderedEvents.find((event) => event.id === session.spikeEventId) : undefined;
+      return spike?.id ?? orderedEvents.at(-1)?.id ?? null;
+    });
+  }, [orderedEvents, session?.spikeEventId, sessionId]);
+
+  if (!sessionId) return <Empty text="Select a session from the Sessions tab to inspect it." />;
+  if (!orderedEvents.length) return <Empty text="No token events are available for this session in the loaded range." />;
+  const selectedEvent = orderedEvents.find((event) => event.id === selectedEventId) ?? orderedEvents.at(-1)!;
+  const eventPrompts = promptsForTurn(prompts, orderedEvents, selectedEvent.id);
+  const selectedPrompt = prompts.find((prompt) => prompt.id === selectedPromptId) ?? eventPrompts.at(-1) ?? null;
+  const selectedIndex = orderedEvents.findIndex((event) => event.id === selectedEvent.id);
+  const sums = tokenSums(orderedEvents);
+  const selectEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setSelectedPromptId(null);
+  };
+  const selectPrompt = (prompt: Prompt) => {
+    setSelectedPromptId(prompt.id);
+    const nearest = findNearestEventForPrompt(orderedEvents, prompt);
+    if (nearest) setSelectedEventId(nearest.id);
+  };
   return (
     <section className="panel detail">
       <PanelHead title={session ? `${session.source} / ${session.projectName} / ${session.name}` : "Session detail"} meta={session ? compactPath(session.projectPath || session.file) : ""} />
@@ -236,7 +276,286 @@ function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | 
         <Metric label="Cache Read" value={formatNumber(sums.cacheRead)} note="reused context" />
         <Metric label="Output" value={formatNumber(sums.output)} note="answer tokens" />
       </section>
-      <TokenChart events={events} prompts={prompts} large breakdown />
+      <div className="detail-workspace">
+        <SessionDetailChart
+          events={orderedEvents}
+          prompts={prompts}
+          selectedEventId={selectedEvent.id}
+          selectedPromptId={selectedPrompt?.id ?? null}
+          onSelectEvent={selectEvent}
+          onSelectPrompt={selectPrompt}
+        />
+        <TurnInspector
+          event={selectedEvent}
+          prompts={eventPrompts}
+          selectedPrompt={selectedPrompt}
+          onSelectPrompt={setSelectedPromptId}
+          onPrevious={() => selectEvent(orderedEvents[selectedIndex - 1].id)}
+          onNext={() => selectEvent(orderedEvents[selectedIndex + 1].id)}
+          hasPrevious={selectedIndex > 0}
+          hasNext={selectedIndex < orderedEvents.length - 1}
+        />
+      </div>
+      <SessionEventTable events={orderedEvents} selectedEventId={selectedEvent.id} onSelectEvent={selectEvent} />
+    </section>
+  );
+}
+
+type DetailMode = "turn" | "cumulative";
+type DetailSeriesKey = "input" | "cacheCreate" | "output" | "reasoning";
+
+const detailSeries: Array<{ key: DetailSeriesKey; label: string; color: string }> = [
+  { key: "input", label: "Fresh input", color: "#69b7ff" },
+  { key: "cacheCreate", label: "Cache write", color: "#9b8cff" },
+  { key: "output", label: "Output", color: "#ffcc66" },
+  { key: "reasoning", label: "Reasoning", color: "#df88ff" },
+];
+
+function SessionDetailChart({
+  events,
+  prompts,
+  selectedEventId,
+  selectedPromptId,
+  onSelectEvent,
+  onSelectPrompt,
+}: {
+  events: TokenEvent[];
+  prompts: Prompt[];
+  selectedEventId: string;
+  selectedPromptId: string | null;
+  onSelectEvent: (eventId: string) => void;
+  onSelectPrompt: (prompt: Prompt) => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+  const [mode, setMode] = useState<DetailMode>("turn");
+  const [showTotal, setShowTotal] = useState(false);
+  const [showCacheRead, setShowCacheRead] = useState(false);
+  const [enabled, setEnabled] = useState<Record<DetailSeriesKey, boolean>>({
+    input: true,
+    cacheCreate: true,
+    output: true,
+    reasoning: true,
+  });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const chart = chartInstance(chartRef, ref.current);
+    chart.setOption(sessionDetailOption(events, prompts, selectedEventId, selectedPromptId, enabled, mode, showTotal, showCacheRead), { notMerge: true });
+    const click = (params: { seriesName?: string; data?: unknown }) => {
+      const id = chartDataId(params.data);
+      if (!id) return;
+      if (params.seriesName === "Prompts") {
+        const prompt = prompts.find((item) => item.id === id);
+        if (prompt) onSelectPrompt(prompt);
+        return;
+      }
+      if (events.some((event) => event.id === id)) onSelectEvent(id);
+    };
+    const resize = () => chart.resize();
+    chart.on("click", click);
+    window.addEventListener("resize", resize);
+    return () => {
+      chart.off("click", click);
+      window.removeEventListener("resize", resize);
+    };
+  }, [enabled, events, mode, onSelectEvent, onSelectPrompt, prompts, selectedEventId, selectedPromptId, showCacheRead, showTotal]);
+
+  useEffect(() => () => disposeChart(chartRef), []);
+
+  const resetZoom = () => chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
+  return (
+    <section className="detail-chart-region">
+      <div className="detail-toolbar">
+        <div className="series-toggles" aria-label="token series">
+          {detailSeries.map((series) => (
+            <label className="series-toggle" key={series.key}>
+              <input
+                type="checkbox"
+                checked={enabled[series.key]}
+                onChange={() => setEnabled((current) => ({ ...current, [series.key]: !current[series.key] }))}
+              />
+              <i style={{ background: series.color }} />
+              <span>{series.label}</span>
+            </label>
+          ))}
+          <label className="series-toggle">
+            <input type="checkbox" checked={showTotal} onChange={() => setShowTotal((current) => !current)} />
+            <i className="total-swatch" />
+            <span>New tokens</span>
+          </label>
+          <label className="series-toggle">
+            <input type="checkbox" checked={showCacheRead} onChange={() => setShowCacheRead((current) => !current)} />
+            <i className="cache-swatch" />
+            <span>Cache read</span>
+          </label>
+        </div>
+        <div className="detail-chart-actions">
+          <div className="segmented" aria-label="chart mode">
+            <button type="button" className={mode === "turn" ? "active" : ""} aria-pressed={mode === "turn"} onClick={() => setMode("turn")}>
+              Turns
+            </button>
+            <button type="button" className={mode === "cumulative" ? "active" : ""} aria-pressed={mode === "cumulative"} onClick={() => setMode("cumulative")}>
+              Cumulative
+            </button>
+          </div>
+          <button type="button" className="quiet-button" onClick={resetZoom}>
+            Reset zoom
+          </button>
+        </div>
+      </div>
+      <div ref={ref} className="detail-chart" role="img" aria-label="Session token events and prompt markers" />
+    </section>
+  );
+}
+
+function TurnInspector({
+  event,
+  prompts,
+  selectedPrompt,
+  onSelectPrompt,
+  onPrevious,
+  onNext,
+  hasPrevious,
+  hasNext,
+}: {
+  event: TokenEvent;
+  prompts: Prompt[];
+  selectedPrompt: Prompt | null;
+  onSelectPrompt: (promptId: string) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}) {
+  return (
+    <aside className="turn-inspector">
+      <header className="inspector-head">
+        <div>
+          <p className="inspector-label">Selected turn</p>
+          <h3>{new Date(event.timestamp).toLocaleString()}</h3>
+          <small>{event.model || "unknown model"}</small>
+        </div>
+        <div className="turn-navigation">
+          <button type="button" title="Previous turn" aria-label="Previous turn" disabled={!hasPrevious} onClick={onPrevious}>
+            &lt;
+          </button>
+          <button type="button" title="Next turn" aria-label="Next turn" disabled={!hasNext} onClick={onNext}>
+            &gt;
+          </button>
+        </div>
+      </header>
+      <dl className="turn-stats">
+        {visibleBreakdownRows(event).map((row) => (
+          <div key={row.key}>
+            <dt>{row.label}</dt>
+            <dd>{formatNumber(row.value)}</dd>
+          </div>
+        ))}
+        <div>
+          <dt>Total</dt>
+          <dd>{formatNumber(event.total)}</dd>
+        </div>
+      </dl>
+      {(event.contextPercent != null || event.contextWindow != null || event.fiveHourPercent != null || event.weeklyPercent != null) && (
+        <dl className="turn-stats quota-stats">
+          {event.contextWindow != null && (
+            <div>
+              <dt>Context window</dt>
+              <dd>{formatNumber(event.contextWindow)}</dd>
+            </div>
+          )}
+          {event.contextPercent != null && (
+            <div>
+              <dt>Context used</dt>
+              <dd>{formatPercent(event.contextPercent)}</dd>
+            </div>
+          )}
+          {event.fiveHourPercent != null && (
+            <div>
+              <dt>Five hour</dt>
+              <dd>{formatPercent(event.fiveHourPercent)}</dd>
+            </div>
+          )}
+          {event.weeklyPercent != null && (
+            <div>
+              <dt>Weekly</dt>
+              <dd>{formatPercent(event.weeklyPercent)}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+      <section className="prompt-inspector">
+        <div className="inspector-section-head">
+          <h4>Preceding prompts</h4>
+          <small>{prompts.length}</small>
+        </div>
+        {prompts.length > 1 && (
+          <div className="prompt-tabs">
+            {prompts.map((prompt, index) => (
+              <button type="button" className={prompt.id === selectedPrompt?.id ? "active" : ""} key={prompt.id} onClick={() => onSelectPrompt(prompt.id)}>
+                {index + 1}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="prompt-text">{selectedPrompt?.text || "No preceding prompt for this turn."}</div>
+        {selectedPrompt && <small>{selectedPrompt.imageCount ? `${selectedPrompt.imageCount} images` : "Text prompt"}</small>}
+      </section>
+    </aside>
+  );
+}
+
+function SessionEventTable({ events, selectedEventId, onSelectEvent }: { events: TokenEvent[]; selectedEventId: string; onSelectEvent: (eventId: string) => void }) {
+  return (
+    <section className="session-event-list">
+      <div className="inspector-section-head">
+        <h3>Session events</h3>
+        <small>{events.length} turns</small>
+      </div>
+      <div className="table-wrap">
+        <table className="session-event-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Model</th>
+              <th>New</th>
+              <th>Fresh</th>
+              <th>Cache write</th>
+              <th>Cache read</th>
+              <th>Output</th>
+              <th>Reasoning</th>
+              <th>Context</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...events].reverse().map((event) => (
+              <tr
+                key={event.id}
+                className={event.id === selectedEventId ? "selected" : ""}
+                tabIndex={0}
+                onClick={() => onSelectEvent(event.id)}
+                onKeyDown={(keyEvent) => {
+                  if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+                    keyEvent.preventDefault();
+                    onSelectEvent(event.id);
+                  }
+                }}
+              >
+                <td>{new Date(event.timestamp).toLocaleString()}</td>
+                <td>{event.model || "-"}</td>
+                <td>{formatNumber(newTokens(event))}</td>
+                <td>{formatNumber(event.input)}</td>
+                <td>{formatNumber(event.cacheCreate)}</td>
+                <td>{formatNumber(event.cacheRead)}</td>
+                <td>{formatNumber(event.output)}</td>
+                <td>{formatNumber(event.reasoning)}</td>
+                <td>{event.contextPercent == null ? "-" : formatPercent(event.contextPercent)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -321,15 +640,14 @@ function TokenChart({ events, prompts, large = false, breakdown = false }: { eve
 
   useEffect(() => {
     if (!ref.current) return;
-    const chart = chartRef.current ?? echarts.init(ref.current, null, { renderer: "canvas" });
-    chartRef.current = chart;
+    const chart = chartInstance(chartRef, ref.current);
     chart.setOption(tokenOption(events, prompts, large, breakdown), { notMerge: true });
     const resize = () => chart.resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, [events, prompts, large, breakdown]);
 
-  useEffect(() => () => chartRef.current?.dispose(), []);
+  useEffect(() => () => disposeChart(chartRef), []);
 
   return <div ref={ref} className={large ? "chart large" : "chart"} />;
 }
@@ -339,16 +657,25 @@ function DailyChart({ data }: { data: Array<{ day: string; total: number; averag
   const chartRef = useRef<echarts.ECharts | null>(null);
   useEffect(() => {
     if (!ref.current) return;
-    const chart = chartRef.current ?? echarts.init(ref.current, null, { renderer: "canvas" });
-    chartRef.current = chart;
+    if (!data.length) {
+      disposeChart(chartRef);
+      return;
+    }
+    const chart = chartInstance(chartRef, ref.current);
     chart.setOption({
       animation: false,
       grid: { top: 20, right: 58, bottom: 36, left: 64 },
-      tooltip: { trigger: "axis", backgroundColor: "#132024", borderColor: "#39525a", textStyle: { color: "#edf6f2" } },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: "#132024",
+        borderColor: "#39525a",
+        textStyle: { color: "#edf6f2" },
+        valueFormatter: (value) => formatAverage(Number(value)),
+      },
       xAxis: { type: "category", data: data.map((item) => item.day), axisLabel: { color: "#9bb2ad" } },
       yAxis: [
         { type: "value", axisLabel: { color: "#9bb2ad", formatter: formatNumber }, splitLine: { lineStyle: { color: "#26393d" } } },
-        { type: "value", axisLabel: { color: "#9bb2ad", formatter: formatNumber }, splitLine: { show: false } },
+        { type: "value", axisLabel: { color: "#9bb2ad", formatter: (value: number) => formatAverage(value) }, splitLine: { show: false } },
       ],
       series: [
         { type: "bar", name: "Daily total", data: data.map((item) => item.total), itemStyle: { color: "#73d99f", borderRadius: [6, 6, 0, 0] } },
@@ -356,8 +683,23 @@ function DailyChart({ data }: { data: Array<{ day: string; total: number; averag
       ],
     } satisfies EChartsOption);
   }, [data]);
-  useEffect(() => () => chartRef.current?.dispose(), []);
+  useEffect(() => () => disposeChart(chartRef), []);
+  if (!data.length) return <div className="chart-empty">No daily totals in the selected range.</div>;
   return <div ref={ref} className="chart large" />;
+}
+
+function chartInstance(ref: React.MutableRefObject<echarts.ECharts | null>, element: HTMLDivElement): echarts.ECharts {
+  if (!ref.current || ref.current.isDisposed()) {
+    ref.current = echarts.init(element, null, { renderer: "canvas" });
+  }
+  return ref.current;
+}
+
+function disposeChart(ref: React.MutableRefObject<echarts.ECharts | null>) {
+  if (ref.current && !ref.current.isDisposed()) {
+    ref.current.dispose();
+  }
+  ref.current = null;
 }
 
 function tokenOption(events: TokenEvent[], prompts: Prompt[], large: boolean, breakdown: boolean): EChartsOption {
@@ -391,6 +733,200 @@ function tokenOption(events: TokenEvent[], prompts: Prompt[], large: boolean, br
     dataZoom: large ? [{ type: "inside" }, { type: "slider", height: 18, bottom: 8 }] : [],
     series,
   };
+}
+
+function sessionDetailOption(
+  events: TokenEvent[],
+  prompts: Prompt[],
+  selectedEventId: string,
+  selectedPromptId: string | null,
+  enabled: Record<DetailSeriesKey, boolean>,
+  mode: DetailMode,
+  showTotal: boolean,
+  showCacheRead: boolean,
+): EChartsOption {
+  const cacheAxis = showCacheRead ? 1 : -1;
+  const promptAxis = showCacheRead ? 2 : 1;
+  const xAxis = [
+    detailTimeAxis(0, false),
+    ...(showCacheRead ? [detailTimeAxis(cacheAxis, false)] : []),
+    detailTimeAxis(promptAxis, true),
+  ];
+  const yAxis = [
+    {
+      type: "value" as const,
+      axisLabel: { color: "#9bb2ad", formatter: formatNumber },
+      splitLine: { lineStyle: { color: "#26393d" } },
+    },
+    ...(showCacheRead
+      ? [
+          {
+            type: "value" as const,
+            gridIndex: cacheAxis,
+            axisLabel: { color: "#9bb2ad", formatter: formatNumber },
+            splitLine: { lineStyle: { color: "#26393d" } },
+          },
+        ]
+      : []),
+    {
+      type: "value" as const,
+      gridIndex: promptAxis,
+      min: -1,
+      max: 1,
+      show: false,
+    },
+  ];
+  const series: NonNullable<EChartsOption["series"]> = [];
+  detailSeries.forEach((definition) => {
+    if (!enabled[definition.key]) return;
+    series.push({
+      type: mode === "turn" ? "bar" : "line",
+      name: definition.label,
+      data: detailPoints(events, definition.key, mode),
+      stack: mode === "turn" ? "turn tokens" : undefined,
+      barMaxWidth: 22,
+      symbol: "none",
+      itemStyle: { color: definition.color },
+      lineStyle: { color: definition.color, width: 1.8 },
+      emphasis: { focus: "series" },
+    });
+  });
+  if (showTotal) {
+    series.push({
+      type: "line",
+      name: "New tokens",
+      data: detailTotalPoints(events, mode),
+      symbol: events.length < 80 ? "circle" : "none",
+      symbolSize: 5,
+      lineStyle: { color: "#76d99f", width: 2.2 },
+      itemStyle: { color: "#76d99f" },
+      emphasis: { focus: "series" },
+    });
+  }
+  if (showCacheRead) {
+    series.push({
+      type: "line",
+      name: "Cache read",
+      xAxisIndex: cacheAxis,
+      yAxisIndex: cacheAxis,
+      data: detailPoints(events, "cacheRead", mode),
+      symbol: "none",
+      lineStyle: { color: "#43d4c3", width: 1.8 },
+      areaStyle: { color: "#43d4c322" },
+    });
+  }
+  series.push({
+    type: "scatter",
+    name: "Prompts",
+    xAxisIndex: promptAxis,
+    yAxisIndex: promptAxis,
+    data: prompts.map((prompt) => ({
+      value: [prompt.timestamp, 0, prompt.id],
+      itemStyle: { color: prompt.id === selectedPromptId ? "#ffffff" : "#edf18a" },
+    })),
+    symbol: "diamond",
+    symbolSize: (value: unknown) => (chartDataId(value) === selectedPromptId ? 15 : 10),
+  });
+  const selectedIndex = events.findIndex((event) => event.id === selectedEventId);
+  if (selectedIndex >= 0) {
+    series.push({
+      type: "scatter",
+      name: "Selected turn",
+      data: [[events[selectedIndex].timestamp, detailTotalAt(events, selectedIndex, mode), selectedEventId]],
+      symbol: "circle",
+      symbolSize: 13,
+      silent: true,
+      tooltip: { show: false },
+      itemStyle: { color: "#ffffff", borderColor: "#08110f", borderWidth: 3 },
+      z: 8,
+    });
+  }
+  const axisIndexes = xAxis.map((_, index) => index);
+  return {
+    animation: false,
+    grid: showCacheRead
+      ? [
+          { left: 66, right: 24, top: 42, height: "43%" },
+          { left: 66, right: 24, top: "58%", height: "14%" },
+          { left: 66, right: 24, top: "77%", height: 28 },
+        ]
+      : [
+          { left: 66, right: 24, top: 42, height: "62%" },
+          { left: 66, right: 24, top: "75%", height: 28 },
+        ],
+    legend: { show: false },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "line" },
+      backgroundColor: "#132024",
+      borderColor: "#39525a",
+      textStyle: { color: "#edf6f2" },
+      formatter: (params: unknown) => detailTooltip(params, events, prompts),
+    },
+    axisPointer: { link: [{ xAxisIndex: "all" }] },
+    xAxis,
+    yAxis,
+    dataZoom: [
+      { type: "inside", xAxisIndex: axisIndexes },
+      { type: "slider", xAxisIndex: axisIndexes, height: 18, bottom: 8 },
+    ],
+    series,
+  };
+}
+
+function detailTimeAxis(gridIndex: number, showLabels: boolean) {
+  return {
+    type: "time" as const,
+    gridIndex,
+    axisLabel: { show: showLabels, color: "#9bb2ad" },
+    axisLine: { lineStyle: { color: "#26393d" } },
+    axisTick: { show: showLabels },
+  };
+}
+
+function detailPoints(events: TokenEvent[], key: DetailSeriesKey | "cacheRead", mode: DetailMode): Array<[string, number, string]> {
+  let running = 0;
+  return events.map((event) => {
+    running += Number(event[key] || 0);
+    return [event.timestamp, mode === "cumulative" ? running : Number(event[key] || 0), event.id];
+  });
+}
+
+function detailTotalPoints(events: TokenEvent[], mode: DetailMode): Array<[string, number, string]> {
+  let running = 0;
+  return events.map((event) => {
+    running += newTokens(event);
+    return [event.timestamp, mode === "cumulative" ? running : newTokens(event), event.id];
+  });
+}
+
+function detailTotalAt(events: TokenEvent[], index: number, mode: DetailMode): number {
+  if (mode === "turn") return newTokens(events[index]);
+  return events.slice(0, index + 1).reduce((sum, event) => sum + newTokens(event), 0);
+}
+
+function detailTooltip(params: unknown, events: TokenEvent[], prompts: Prompt[]): string {
+  const items = Array.isArray(params) ? params : [];
+  const id = items.map((item) => chartDataId((item as { data?: unknown }).data)).find((value) => events.some((event) => event.id === value));
+  const event = events.find((candidate) => candidate.id === id);
+  if (!event) return "";
+  const rows = visibleBreakdownRows(event);
+  const promptCount = promptsForTurn(prompts, events, event.id).length;
+  return [
+    `<strong>${new Date(event.timestamp).toLocaleString()}</strong>`,
+    ...rows.map((row) => `<div class="chart-tooltip-row"><span>${row.label}</span><b>${formatNumber(row.value)}</b></div>`),
+    ...(promptCount ? [`<div class="chart-tooltip-row"><span>Prompts</span><b>${promptCount}</b></div>`] : []),
+  ].join("");
+}
+
+function chartDataId(value: unknown): string | null {
+  if (Array.isArray(value)) return typeof value[2] === "string" ? value[2] : null;
+  if (value && typeof value === "object" && "value" in value) return chartDataId((value as { value: unknown }).value);
+  return null;
+}
+
+function formatPercent(value: number): string {
+  return `${Number(value).toFixed(1)}%`;
 }
 
 function line(name: string, data: Array<[string, number]>, color: string, width = 1.8) {
