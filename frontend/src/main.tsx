@@ -18,7 +18,7 @@ import {
   tokenSums,
   visibleBreakdownRows,
 } from "./selectors";
-import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Source, TokenEvent, TokenTotals } from "./types";
+import type { DailyTotal, DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Source, Summary, TokenEvent, TokenTotals } from "./types";
 import "./styles.css";
 
 type Tab = "dashboard" | "projects" | "sessions" | "detail" | "raw";
@@ -43,6 +43,7 @@ function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const viewData = useMemo(() => filterDashboardData(data, source, projectId), [data, projectId, source]);
 
   useEffect(() => {
     let timer = 0;
@@ -70,15 +71,15 @@ function App() {
     };
   }, [range, source, projectId]);
 
-  const visibleProjects = useMemo(() => filterProjects(data?.projects ?? [], search), [data?.projects, search]);
-  const visibleSessions = useMemo(() => filterSessions(data?.sessions ?? [], search), [data?.sessions, search]);
+  const visibleProjects = useMemo(() => filterProjects(viewData?.projects ?? [], search), [search, viewData?.projects]);
+  const visibleSessions = useMemo(() => filterSessions(viewData?.sessions ?? [], search), [search, viewData?.sessions]);
   const detailEvents = useMemo(
-    () => (detailSession ? (data?.events ?? []).filter((event) => event.sessionId === detailSession) : []),
-    [data?.events, detailSession],
+    () => (detailSession ? (viewData?.events ?? []).filter((event) => event.sessionId === detailSession) : []),
+    [detailSession, viewData?.events],
   );
   const detailPrompts = useMemo(
-    () => (detailSession ? (data?.prompts ?? []).filter((prompt) => prompt.sessionId === detailSession) : []),
-    [data?.prompts, detailSession],
+    () => (detailSession ? (viewData?.prompts ?? []).filter((prompt) => prompt.sessionId === detailSession) : []),
+    [detailSession, viewData?.prompts],
   );
 
   return (
@@ -91,8 +92,8 @@ function App() {
         </div>
         <div className="status-card">
           <span className={error ? "status error" : "status ok"}>{error ? "error" : loading ? "refreshing" : "live"}</span>
-          <strong>{data?.summary ? new Date(data.summary.generatedAt).toLocaleTimeString() : "waiting"}</strong>
-          {error ? <small>{error}</small> : <small>{data?.summary.events ?? 0} events indexed</small>}
+          <strong>{viewData?.summary ? new Date(viewData.summary.generatedAt).toLocaleTimeString() : "waiting"}</strong>
+          {error ? <small>{error}</small> : <small>{viewData?.summary.events ?? 0} events indexed</small>}
         </div>
       </header>
 
@@ -114,6 +115,7 @@ function App() {
             onChange={(event) => {
               setSource(event.target.value as Source);
               setProjectId("all");
+              setDetailSession(null);
             }}
           >
             <option value="all">All</option>
@@ -123,9 +125,15 @@ function App() {
         </label>
         <label>
           <span>Project</span>
-          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          <select
+            value={projectId}
+            onChange={(event) => {
+              setProjectId(event.target.value);
+              setDetailSession(null);
+            }}
+          >
             <option value="all">All projects</option>
-            {(data?.projects ?? []).map((project) => (
+            {(viewData?.projects ?? []).map((project) => (
               <option key={project.id} value={project.id}>
                 {project.source} / {project.name}
               </option>
@@ -146,21 +154,21 @@ function App() {
         ))}
       </nav>
 
-      {tab === "dashboard" && <Dashboard data={data} />}
-      {tab === "projects" && <Projects projects={visibleProjects} events={data?.events ?? []} prompts={data?.prompts ?? []} />}
+      {tab === "dashboard" && <Dashboard data={viewData} />}
+      {tab === "projects" && <Projects projects={visibleProjects} events={viewData?.events ?? []} prompts={viewData?.prompts ?? []} />}
       {tab === "sessions" && (
         <Sessions
           sessions={visibleSessions}
-          events={data?.events ?? []}
-          prompts={data?.prompts ?? []}
+          events={viewData?.events ?? []}
+          prompts={viewData?.prompts ?? []}
           onOpen={(id) => {
             setDetailSession(id);
             setTab("detail");
           }}
         />
       )}
-      {tab === "detail" && <Detail sessionId={detailSession} events={detailEvents} prompts={detailPrompts} sessions={data?.sessions ?? []} />}
-      {tab === "raw" && <RawTable events={data?.events ?? []} />}
+      {tab === "detail" && <Detail sessionId={detailSession} events={detailEvents} prompts={detailPrompts} sessions={viewData?.sessions ?? []} />}
+      {tab === "raw" && <RawTable events={viewData?.events ?? []} />}
     </main>
   );
 }
@@ -1387,6 +1395,53 @@ function PanelHead({ title, meta }: { title: string; meta: string }) {
 
 function Empty({ text }: { text: string }) {
   return <div className="empty">{text}</div>;
+}
+
+function filterDashboardData(data: DashboardData | null, source: Source, projectId: string): DashboardData | null {
+  if (!data) return null;
+  const matches = (item: { source: "codex" | "claude"; projectId: string }) =>
+    (source === "all" || item.source === source) && (projectId === "all" || item.projectId === projectId);
+  const events = data.events.filter(matches);
+  const prompts = data.prompts.filter(matches);
+  const projects = data.projects.filter((project) => (source === "all" || project.source === source) && (projectId === "all" || project.id === projectId));
+  const sessions = data.sessions.filter(matches);
+  return {
+    summary: buildSummary(data.summary, events, prompts),
+    events,
+    prompts,
+    projects,
+    sessions,
+  };
+}
+
+function buildSummary(base: Summary, events: TokenEvent[], prompts: Prompt[]): Summary {
+  const ordered = sortEventsByTime(events);
+  const latest = ordered.at(-1) ?? null;
+  const spike = ordered.reduce<TokenEvent | null>((best, event) => (!best || newTokens(event) > newTokens(best) ? event : best), null);
+  return {
+    ...base,
+    events: events.length,
+    prompts: prompts.length,
+    totals: tokenSums(events),
+    latest,
+    spike,
+    daily: dailyTotals(events),
+  };
+}
+
+function dailyTotals(events: TokenEvent[]): DailyTotal[] {
+  const byDay = new Map<string, DailyTotal>();
+  for (const event of events) {
+    const day = event.timestamp.slice(0, 10);
+    const current = byDay.get(day) ?? { day, total: 0, events: 0, spike: 0, average: 0 };
+    const value = newTokens(event);
+    current.total += value;
+    current.events += 1;
+    current.spike = Math.max(current.spike, value);
+    current.average = current.total / current.events;
+    byDay.set(day, current);
+  }
+  return [...byDay.values()].sort((left, right) => left.day.localeCompare(right.day));
 }
 
 function filterProjects(projects: ProjectSummary[], search: string) {

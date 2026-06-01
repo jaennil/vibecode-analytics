@@ -95,6 +95,34 @@ func TestSummaryComputesTotals(t *testing.T) {
 	}
 }
 
+func TestQueriesFilterBySource(t *testing.T) {
+	store := testStore(t)
+	codex := fixtureEvent("codex-e1", time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC))
+	claude := fixtureEvent("claude-e1", time.Date(2026, 5, 1, 11, 0, 0, 0, time.UTC))
+	claude.Source = domain.SourceClaude
+	claude.ProjectID = "claude:/work/demo"
+	claude.SessionID = "claude:/work/demo"
+	if err := store.UpsertEvents(context.Background(), []domain.Event{codex, claude}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.Events(context.Background(), domain.Query{Range: "all", Source: domain.SourceClaude}, 260, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Source != domain.SourceClaude {
+		t.Fatalf("events=%+v, want only claude", events)
+	}
+
+	summary, err := store.Summary(context.Background(), domain.Query{Range: "all", Source: domain.SourceCodex}, 260, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Events != 1 || summary.Latest == nil || summary.Latest.Source != domain.SourceCodex {
+		t.Fatalf("summary=%+v, want only codex", summary)
+	}
+}
+
 func fixtureEvent(id string, ts time.Time) domain.Event {
 	return domain.Event{
 		ID:          id,
