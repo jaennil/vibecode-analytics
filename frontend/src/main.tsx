@@ -20,6 +20,8 @@ import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Sour
 import "./styles.css";
 
 type Tab = "dashboard" | "projects" | "sessions" | "detail" | "raw";
+type GlobalChartMode = "breakdown" | "new" | "total" | "cacheRead";
+type GlobalScaleMode = "log" | "linear";
 
 const ranges: Array<{ value: Range; label: string }> = [
   { value: "live", label: "Live tail" },
@@ -698,8 +700,15 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [minutes, setMinutes] = useState(0);
   const [promptLimit, setPromptLimit] = useState(0);
+  const [mode, setMode] = useState<GlobalChartMode>("breakdown");
+  const [scale, setScale] = useState<GlobalScaleMode>("log");
   const [hover, setHover] = useState<GlobalBarHover | null>(null);
   const visible = useMemo(() => filterGlobalChartWindow(events, prompts, minutes, promptLimit), [events, minutes, promptLimit, prompts]);
+  const visibleTotals = useMemo(() => tokenSums(visible.events), [visible.events]);
+  const largestEvent = useMemo(
+    () => visible.events.reduce<TokenEvent | null>((largest, event) => (!largest || globalEventValue(event, mode) > globalEventValue(largest, mode) ? event : largest), null),
+    [mode, visible.events],
+  );
 
   useEffect(() => {
     if (!visible.events.length) {
@@ -709,11 +718,11 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
     }
     if (!ref.current) return;
     const chart = chartInstance(chartRef, ref.current);
-    chart.setOption(globalSessionOption(visible.events, visible.prompts), { notMerge: true });
+    chart.setOption(globalSessionOption(visible.events, visible.prompts, mode, scale), { notMerge: true });
     const resize = () => chart.resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, [visible.events, visible.prompts]);
+  }, [mode, scale, visible.events, visible.prompts]);
 
   useEffect(() => () => disposeChart(chartRef), []);
   if (!events.length) return <div className="chart-empty">No session events in the selected range.</div>;
@@ -740,7 +749,29 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
             <option value={180}>Last 180 minutes</option>
           </select>
         </label>
+        <label>
+          <span>Bars</span>
+          <select value={mode} onChange={(event) => setMode(event.target.value as GlobalChartMode)}>
+            <option value="breakdown">New token breakdown</option>
+            <option value="new">New tokens</option>
+            <option value="total">Total incl. cache read</option>
+            <option value="cacheRead">Cache read only</option>
+          </select>
+        </label>
+        <label>
+          <span>Scale</span>
+          <select value={scale} onChange={(event) => setScale(event.target.value as GlobalScaleMode)}>
+            <option value="log">Log scale</option>
+            <option value="linear">Linear scale</option>
+          </select>
+        </label>
         <small>{visible.events.length} visible events / {visible.prompts.length} visible prompts</small>
+      </div>
+      <div className="global-chart-summary" aria-label="visible chart totals">
+        <GlobalSummaryItem label="Bar unit" value={globalModeLabel(mode)} />
+        <GlobalSummaryItem label="New tokens" value={formatNumber(visibleTotals.newTokens)} />
+        <GlobalSummaryItem label="Cache read" value={formatNumber(visibleTotals.cacheRead)} />
+        <GlobalSummaryItem label="Largest bar" value={largestEvent ? formatNumber(globalEventValue(largestEvent, mode)) : "0"} />
       </div>
       {visible.events.length ? (
         <div
@@ -758,6 +789,15 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
         <div className="chart-empty">No session events match the chart filters.</div>
       )}
     </>
+  );
+}
+
+function GlobalSummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="global-summary-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -829,56 +869,106 @@ function tokenOption(events: TokenEvent[], prompts: Prompt[], large: boolean, br
   };
 }
 
-function globalSessionOption(events: TokenEvent[], prompts: Prompt[]): EChartsOption {
+const globalBreakdown = [
+  { key: "input", name: "Fresh input", color: "#76d99f" },
+  { key: "cacheCreate", name: "Cache write", color: "#8aa2ff" },
+  { key: "output", name: "Output", color: "#ffcc66" },
+  { key: "reasoning", name: "Reasoning", color: "#d987ff" },
+] as const;
+
+function globalModeLabel(mode: GlobalChartMode): string {
+  if (mode === "total") return "Total tokens";
+  if (mode === "cacheRead") return "Cache read";
+  return "New tokens";
+}
+
+function globalEventValue(event: TokenEvent, mode: GlobalChartMode): number {
+  if (mode === "cacheRead") return Number(event.cacheRead || 0);
+  if (mode === "total") return Number(event.total || newTokens(event) + Number(event.cacheRead || 0));
+  return newTokens(event);
+}
+
+function globalSessionOption(events: TokenEvent[], prompts: Prompt[], mode: GlobalChartMode, scale: GlobalScaleMode): EChartsOption {
   const visibleEvents = sortEventsByTime(events);
+  const showSlider = visibleEvents.length > 120 || prompts.length > 60;
   const eventPoints = (source: "codex" | "claude") =>
     visibleEvents
       .filter((event) => event.source === source)
-      .map((event) => [event.timestamp, newTokens(event), event.id, event.projectName, event.sessionName]);
+      .map((event) => [event.timestamp, globalEventValue(event, mode), event.id, event.projectName, event.sessionName]);
+  const series: NonNullable<EChartsOption["series"]> =
+    mode === "breakdown"
+      ? globalBreakdown.map((definition) => ({
+          type: "bar" as const,
+          name: definition.name,
+          data: visibleEvents.map((event) => [event.timestamp, Number(event[definition.key] || 0), event.id, event.projectName, event.sessionName]),
+          stack: "new tokens",
+          barMaxWidth: 18,
+          itemStyle: { color: definition.color },
+          emphasis: { focus: "series" },
+        }))
+      : [
+          {
+            type: "bar" as const,
+            name: "Codex",
+            data: eventPoints("codex"),
+            barMaxWidth: 18,
+            itemStyle: { color: "#69b7ff" },
+          },
+          {
+            type: "bar" as const,
+            name: "Claude",
+            data: eventPoints("claude"),
+            barMaxWidth: 18,
+            itemStyle: { color: "#ffb86c" },
+          },
+        ];
+
+  series.push({
+    type: "scatter",
+    name: "Prompts",
+    xAxisIndex: 1,
+    yAxisIndex: 1,
+    data: prompts.map((prompt) => [prompt.timestamp, 0, prompt.id, prompt.projectName, prompt.sessionName]),
+    symbol: "rect",
+    symbolSize: [3, 14],
+    itemStyle: { color: "#edf18a" },
+  });
+
+  const valueAxis =
+    scale === "log"
+      ? {
+          type: "log" as const,
+          min: 1,
+          logBase: 10,
+          name: globalModeLabel(mode),
+          nameTextStyle: { color: "#9bb2ad" },
+          axisLabel: { color: "#9bb2ad", formatter: formatNumber },
+          splitLine: { lineStyle: { color: "#26393d" } },
+        }
+      : {
+          type: "value" as const,
+          name: globalModeLabel(mode),
+          nameTextStyle: { color: "#9bb2ad" },
+          axisLabel: { color: "#9bb2ad", formatter: formatNumber },
+          splitLine: { lineStyle: { color: "#26393d" } },
+        };
+
   return {
     animation: false,
     grid: [
-      { left: 66, right: 24, top: 42, height: "62%" },
-      { left: 66, right: 24, top: "75%", height: 28 },
+      { left: 66, right: 24, top: 46, height: "66%" },
+      { left: 66, right: 24, top: "80%", height: 18 },
     ],
-    legend: { top: 0, textStyle: { color: "#a9bbb7" } },
+    legend: { top: 0, textStyle: { color: "#a9bbb7" }, itemGap: 14 },
     tooltip: { show: false },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     xAxis: [detailTimeAxis(0, false), detailTimeAxis(1, true)],
-    yAxis: [
-      { type: "value", axisLabel: { color: "#9bb2ad", formatter: formatNumber }, splitLine: { lineStyle: { color: "#26393d" } } },
-      { type: "value", gridIndex: 1, min: -1, max: 1, show: false },
-    ],
+    yAxis: [valueAxis, { type: "value", gridIndex: 1, min: -1, max: 1, show: false }],
     dataZoom: [
       { type: "inside", xAxisIndex: [0, 1] },
-      { type: "slider", xAxisIndex: [0, 1], height: 18, bottom: 8 },
+      ...(showSlider ? [{ type: "slider" as const, xAxisIndex: [0, 1], height: 18, bottom: 8 }] : []),
     ],
-    series: [
-      {
-        type: "bar",
-        name: "Codex",
-        data: eventPoints("codex"),
-        barMaxWidth: 16,
-        itemStyle: { color: "#69b7ff" },
-      },
-      {
-        type: "bar",
-        name: "Claude",
-        data: eventPoints("claude"),
-        barMaxWidth: 16,
-        itemStyle: { color: "#ffb86c" },
-      },
-      {
-        type: "scatter",
-        name: "Prompts",
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: prompts.map((prompt) => [prompt.timestamp, 0, prompt.id, prompt.projectName, prompt.sessionName]),
-        symbol: "diamond",
-        symbolSize: 9,
-        itemStyle: { color: "#edf18a" },
-      },
-    ],
+    series,
   };
 }
 

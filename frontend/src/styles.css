@@ -304,6 +304,7 @@ input {
   gap: 10px;
   align-items: end;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
 .global-chart-toolbar label {
@@ -318,11 +319,45 @@ input {
   margin: 0 0 10px auto;
 }
 
+.global-chart-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.global-summary-item {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 28, 26, 0.72);
+}
+
+.global-summary-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.global-summary-item strong {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .global-session-chart {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  height: min(62vh, 560px);
+  height: min(58vh, 520px);
   min-height: 360px;
   overflow: hidden;
 }
@@ -695,5 +730,9 @@ th {
 
   .global-chart-toolbar small {
     margin: 0;
+  }
+
+  .global-chart-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
