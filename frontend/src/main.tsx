@@ -34,11 +34,63 @@ const ranges: Array<{ value: Range; label: string }> = [
   { value: "all", label: "Stored history" },
 ];
 
+const storagePrefix = "live-token-monitor:";
+const sources: Source[] = ["all", "codex", "claude"];
+const globalModes: GlobalChartMode[] = ["line", "breakdown", "new", "total", "cacheRead"];
+const scaleModes: GlobalScaleMode[] = ["linear", "log"];
+const detailModes: DetailMode[] = ["line", "breakdown", "cumulative"];
+
+function useStoredState<T>(key: string, initial: T, validate?: (value: unknown) => value is T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === "undefined") return initial;
+    try {
+      const raw = window.localStorage.getItem(`${storagePrefix}${key}`);
+      if (!raw) return initial;
+      const parsed = JSON.parse(raw) as unknown;
+      return !validate || validate(parsed) ? (parsed as T) : initial;
+    } catch {
+      return initial;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`${storagePrefix}${key}`, JSON.stringify(value));
+    } catch {
+      // localStorage may be unavailable in private or constrained browser contexts.
+    }
+  }, [key, value]);
+
+  return [value, setValue];
+}
+
+function oneOf<T extends string>(values: readonly T[]) {
+  return (value: unknown): value is T => typeof value === "string" && values.includes(value as T);
+}
+
+function numberOption(values: readonly number[]) {
+  return (value: unknown): value is number => typeof value === "number" && values.includes(value);
+}
+
+function booleanValue(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
+function stringValue(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function detailSeriesState(value: unknown): value is Record<DetailSeriesKey, boolean> {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return detailSeries.every((series) => typeof row[series.key] === "boolean");
+}
+
 function App() {
-  const [range, setRange] = useState<Range>("24h");
-  const [source, setSource] = useState<Source>("all");
-  const [projectId, setProjectId] = useState("all");
-  const [search, setSearch] = useState("");
+  const [range, setRange] = useStoredState<Range>("filters.range", "24h", oneOf(ranges.map((item) => item.value)));
+  const [source, setSource] = useStoredState<Source>("filters.source", "all", oneOf(sources));
+  const [projectId, setProjectId] = useStoredState("filters.projectId", "all", stringValue);
+  const [search, setSearch] = useStoredState("filters.search", "", stringValue);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
@@ -291,9 +343,9 @@ function Detail({
   const orderedEvents = useMemo(() => sortEventsByTime(events), [events]);
   const session = target?.type === "session" ? sessions.find((item) => item.id === target.id) : null;
   const project = target?.type === "project" ? projects.find((item) => item.id === target.id) : null;
-  const [minutes, setMinutes] = useState(0);
-  const [promptLimit, setPromptLimit] = useState(0);
-  const [showSum, setShowSum] = useState(false);
+  const [minutes, setMinutes] = useStoredState("detail.minutes", 0, numberOption([0, 5, 10, 60, 360, 1440]));
+  const [promptLimit, setPromptLimit] = useStoredState("detail.promptLimit", 0, numberOption([0, 1, 2, 3, 5, 10]));
+  const [showSum, setShowSum] = useStoredState("detail.showSum", false, booleanValue);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const visible = useMemo(() => filterDetailChartWindow(orderedEvents, prompts, minutes, promptLimit), [minutes, orderedEvents, promptLimit, prompts]);
@@ -414,14 +466,18 @@ function SessionDetailChart({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const [mode, setMode] = useState<DetailMode>("line");
-  const [showCacheRead, setShowCacheRead] = useState(false);
-  const [enabled, setEnabled] = useState<Record<DetailSeriesKey, boolean>>({
-    input: true,
-    cacheCreate: true,
-    output: true,
-    reasoning: true,
-  });
+  const [mode, setMode] = useStoredState<DetailMode>("detail.mode", "line", oneOf(detailModes));
+  const [showCacheRead, setShowCacheRead] = useStoredState("detail.showCacheRead", false, booleanValue);
+  const [enabled, setEnabled] = useStoredState<Record<DetailSeriesKey, boolean>>(
+    "detail.series",
+    {
+      input: true,
+      cacheCreate: true,
+      output: true,
+      reasoning: true,
+    },
+    detailSeriesState,
+  );
 
   useEffect(() => {
     if (!ref.current) return;
@@ -757,10 +813,10 @@ function DailyChart({ data }: { data: Array<{ day: string; total: number; averag
 function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts: Prompt[] }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const [minutes, setMinutes] = useState(0);
-  const [promptLimit, setPromptLimit] = useState(0);
-  const [mode, setMode] = useState<GlobalChartMode>("line");
-  const [scale, setScale] = useState<GlobalScaleMode>("linear");
+  const [minutes, setMinutes] = useStoredState("global.minutes", 0, numberOption([0, 15, 30, 60, 180]));
+  const [promptLimit, setPromptLimit] = useStoredState("global.promptLimit", 0, numberOption([0, 1, 2, 5, 10, 25, 50]));
+  const [mode, setMode] = useStoredState<GlobalChartMode>("global.mode", "line", oneOf(globalModes));
+  const [scale, setScale] = useStoredState<GlobalScaleMode>("global.scale", "linear", oneOf(scaleModes));
   const [hover, setHover] = useState<GlobalBarHover | null>(null);
   const visible = useMemo(() => filterGlobalChartWindow(events, prompts, minutes, promptLimit), [events, minutes, promptLimit, prompts]);
   const visibleTotals = useMemo(() => tokenSums(visible.events), [visible.events]);
