@@ -20,7 +20,7 @@ import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Sour
 import "./styles.css";
 
 type Tab = "dashboard" | "projects" | "sessions" | "detail" | "raw";
-type GlobalChartMode = "breakdown" | "new" | "total" | "cacheRead";
+type GlobalChartMode = "line" | "breakdown" | "new" | "total" | "cacheRead";
 type GlobalScaleMode = "log" | "linear";
 
 const ranges: Array<{ value: Range; label: string }> = [
@@ -700,8 +700,8 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [minutes, setMinutes] = useState(0);
   const [promptLimit, setPromptLimit] = useState(0);
-  const [mode, setMode] = useState<GlobalChartMode>("breakdown");
-  const [scale, setScale] = useState<GlobalScaleMode>("log");
+  const [mode, setMode] = useState<GlobalChartMode>("line");
+  const [scale, setScale] = useState<GlobalScaleMode>("linear");
   const [hover, setHover] = useState<GlobalBarHover | null>(null);
   const visible = useMemo(() => filterGlobalChartWindow(events, prompts, minutes, promptLimit), [events, minutes, promptLimit, prompts]);
   const visibleTotals = useMemo(() => tokenSums(visible.events), [visible.events]);
@@ -752,10 +752,11 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
           </select>
         </label>
         <label>
-          <span>Bars</span>
+          <span>View</span>
           <select value={mode} onChange={(event) => setMode(event.target.value as GlobalChartMode)}>
-            <option value="breakdown">New token breakdown</option>
-            <option value="new">New tokens</option>
+            <option value="line">New tokens line</option>
+            <option value="new">New token bars</option>
+            <option value="breakdown">Token breakdown bars</option>
             <option value="total">Total incl. cache read</option>
             <option value="cacheRead">Cache read only</option>
           </select>
@@ -763,17 +764,17 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
         <label>
           <span>Scale</span>
           <select value={scale} onChange={(event) => setScale(event.target.value as GlobalScaleMode)}>
-            <option value="log">Log scale</option>
             <option value="linear">Linear scale</option>
+            <option value="log">Log scale</option>
           </select>
         </label>
         <small>{visible.events.length} visible events / {visible.prompts.length} visible prompts</small>
       </div>
       <div className="global-chart-summary" aria-label="visible chart totals">
-        <GlobalSummaryItem label="Bar unit" value={globalModeLabel(mode)} />
+        <GlobalSummaryItem label="Chart unit" value={globalModeLabel(mode)} />
         <GlobalSummaryItem label="New tokens" value={formatNumber(visibleTotals.newTokens)} />
         <GlobalSummaryItem label="Cache read" value={formatNumber(visibleTotals.cacheRead)} />
-        <GlobalSummaryItem label="Largest bar" value={largestEvent ? formatNumber(globalEventValue(largestEvent, mode)) : "0"} />
+        <GlobalSummaryItem label="Largest event" value={largestEvent ? formatNumber(globalEventValue(largestEvent, mode)) : "0"} />
       </div>
       {visible.events.length ? (
         <div
@@ -897,8 +898,24 @@ function globalSessionOption(events: TokenEvent[], prompts: Prompt[], mode: Glob
     visibleEvents
       .filter((event) => event.source === source)
       .map((event) => [event.timestamp, globalEventValue(event, mode), event.id, event.projectName, event.sessionName]);
-  const series: NonNullable<EChartsOption["series"]> =
-    mode === "breakdown"
+  const series: NonNullable<EChartsOption["series"]> = (() => {
+    if (mode === "line") {
+      return [
+        {
+          type: "line" as const,
+          name: "New tokens",
+          data: visibleEvents.map((event) => [event.timestamp, newTokens(event), event.id, event.projectName, event.sessionName]),
+          showSymbol: visibleEvents.length < 80,
+          symbol: "circle",
+          symbolSize: 6,
+          smooth: false,
+          lineStyle: { color: "#76d99f", width: 2.5 },
+          itemStyle: { color: "#76d99f" },
+          areaStyle: { color: "#76d99f1f" },
+        },
+      ];
+    }
+    return mode === "breakdown"
       ? globalBreakdown.map((definition) => ({
           type: "bar" as const,
           name: definition.name,
@@ -924,6 +941,7 @@ function globalSessionOption(events: TokenEvent[], prompts: Prompt[], mode: Glob
             itemStyle: { color: "#ffb86c" },
           },
         ];
+  })();
 
   series.push({
     type: "scatter",
@@ -981,7 +999,8 @@ function globalBarHover(chart: echarts.ECharts | null, events: TokenEvent[], off
     const distance = Math.abs(x - offsetX);
     return !best || distance < best.distance ? { event, distance } : best;
   }, null);
-  if (!nearest || nearest.distance > 28) return null;
+  const magnetRange = Math.min(52, Math.max(28, chart.getWidth() / Math.max(events.length * 2, 12)));
+  if (!nearest || nearest.distance > magnetRange) return null;
   const tooltipWidth = 240;
   const tooltipHeight = 190;
   const gap = 18;
