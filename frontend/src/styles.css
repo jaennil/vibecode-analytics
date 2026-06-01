@@ -284,12 +284,28 @@ input {
 
 .chart {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 180px;
+  overflow: hidden;
 }
 
 .chart.large {
   height: min(58vh, 520px);
   min-height: 320px;
+}
+
+.dashboard-global {
+  margin-top: 14px;
+}
+
+.global-session-chart {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: min(62vh, 560px);
+  min-height: 360px;
+  overflow: hidden;
 }
 
 .chart-empty {
@@ -528,6 +544,13 @@ input {
   margin-top: 5px;
 }
 
+.chart-tooltip-meta {
+  max-width: 280px;
+  margin-top: 5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .empty {
   padding: 24px;
   color: var(--muted);
@@ -616,5 +639,10 @@ th {
 
   .detail-chart {
     height: 430px;
+  }
+
+  .global-session-chart {
+    height: 430px;
+    min-height: 320px;
   }
 }

@@ -174,6 +174,10 @@ function Dashboard({ data }: { data: DashboardData | null }) {
         <PanelHead title="Daily trend" meta={`${summary?.daily.length ?? 0} days`} />
         <DailyChart data={summary?.daily ?? []} />
       </section>
+      <section className="panel dashboard-global">
+        <PanelHead title="All sessions" meta={`${data?.events.length ?? 0} events / ${data?.sessions.length ?? 0} sessions`} />
+        <GlobalSessionChart events={data?.events ?? []} prompts={data?.prompts ?? []} />
+      </section>
     </>
   );
 }
@@ -688,6 +692,28 @@ function DailyChart({ data }: { data: Array<{ day: string; total: number; averag
   return <div ref={ref} className="chart large" />;
 }
 
+function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts: Prompt[] }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    if (!events.length) {
+      disposeChart(chartRef);
+      return;
+    }
+    const chart = chartInstance(chartRef, ref.current);
+    chart.setOption(globalSessionOption(events, prompts), { notMerge: true });
+    const resize = () => chart.resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [events, prompts]);
+
+  useEffect(() => () => disposeChart(chartRef), []);
+  if (!events.length) return <div className="chart-empty">No session events in the selected range.</div>;
+  return <div ref={ref} className="global-session-chart" role="img" aria-label="Token events across all loaded sessions" />;
+}
+
 function chartInstance(ref: React.MutableRefObject<echarts.ECharts | null>, element: HTMLDivElement): echarts.ECharts {
   if (!ref.current || ref.current.isDisposed()) {
     ref.current = echarts.init(element, null, { renderer: "canvas" });
@@ -733,6 +759,85 @@ function tokenOption(events: TokenEvent[], prompts: Prompt[], large: boolean, br
     dataZoom: large ? [{ type: "inside" }, { type: "slider", height: 18, bottom: 8 }] : [],
     series,
   };
+}
+
+function globalSessionOption(events: TokenEvent[], prompts: Prompt[]): EChartsOption {
+  const visibleEvents = sortEventsByTime(events);
+  const eventPoints = (source: "codex" | "claude") =>
+    visibleEvents
+      .filter((event) => event.source === source)
+      .map((event) => [event.timestamp, newTokens(event), event.id, event.projectName, event.sessionName]);
+  return {
+    animation: false,
+    grid: [
+      { left: 66, right: 24, top: 42, height: "62%" },
+      { left: 66, right: 24, top: "75%", height: 28 },
+    ],
+    legend: { top: 0, textStyle: { color: "#a9bbb7" } },
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#132024",
+      borderColor: "#39525a",
+      textStyle: { color: "#edf6f2" },
+      formatter: (params: unknown) => globalSessionTooltip(params, visibleEvents, prompts),
+    },
+    axisPointer: { link: [{ xAxisIndex: "all" }] },
+    xAxis: [detailTimeAxis(0, false), detailTimeAxis(1, true)],
+    yAxis: [
+      { type: "value", axisLabel: { color: "#9bb2ad", formatter: formatNumber }, splitLine: { lineStyle: { color: "#26393d" } } },
+      { type: "value", gridIndex: 1, min: -1, max: 1, show: false },
+    ],
+    dataZoom: [
+      { type: "inside", xAxisIndex: [0, 1] },
+      { type: "slider", xAxisIndex: [0, 1], height: 18, bottom: 8 },
+    ],
+    series: [
+      {
+        type: "bar",
+        name: "Codex",
+        data: eventPoints("codex"),
+        barMaxWidth: 16,
+        itemStyle: { color: "#69b7ff" },
+      },
+      {
+        type: "bar",
+        name: "Claude",
+        data: eventPoints("claude"),
+        barMaxWidth: 16,
+        itemStyle: { color: "#ffb86c" },
+      },
+      {
+        type: "scatter",
+        name: "Prompts",
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: prompts.map((prompt) => [prompt.timestamp, 0, prompt.id, prompt.projectName, prompt.sessionName]),
+        symbol: "diamond",
+        symbolSize: 9,
+        itemStyle: { color: "#edf18a" },
+      },
+    ],
+  };
+}
+
+function globalSessionTooltip(params: unknown, events: TokenEvent[], prompts: Prompt[]): string {
+  const value = (params as { data?: unknown })?.data;
+  const id = chartDataId(value);
+  const event = events.find((candidate) => candidate.id === id);
+  if (event) {
+    return [
+      `<strong>${new Date(event.timestamp).toLocaleString()}</strong>`,
+      `<div class="chart-tooltip-meta">${event.source} / ${event.projectName} / ${event.sessionName}</div>`,
+      ...visibleBreakdownRows(event).map((row) => `<div class="chart-tooltip-row"><span>${row.label}</span><b>${formatNumber(row.value)}</b></div>`),
+    ].join("");
+  }
+  const prompt = prompts.find((candidate) => candidate.id === id);
+  if (!prompt) return "";
+  return [
+    `<strong>${new Date(prompt.timestamp).toLocaleString()}</strong>`,
+    `<div class="chart-tooltip-meta">${prompt.source} / ${prompt.projectName} / ${prompt.sessionName}</div>`,
+    `<div class="chart-tooltip-row"><span>Prompt</span><b>${prompt.imageCount ? `${prompt.imageCount} images` : "text"}</b></div>`,
+  ].join("");
 }
 
 function sessionDetailOption(
