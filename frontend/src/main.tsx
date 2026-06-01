@@ -980,10 +980,15 @@ function globalBarHover(chart: echarts.ECharts | null, events: TokenEvent[], off
     return !best || distance < best.distance ? { event, distance } : best;
   }, null);
   if (!nearest || nearest.distance > 28) return null;
+  const tooltipWidth = 240;
+  const tooltipHeight = 190;
+  const gap = 18;
+  const right = offsetX + gap + tooltipWidth;
+  const bottom = offsetY + gap + tooltipHeight;
   return {
     event: nearest.event,
-    left: Math.min(chart.getWidth() - 130, Math.max(130, Number(chart.convertToPixel({ xAxisIndex: 0 }, nearest.event.timestamp)))),
-    top: Math.max(190, offsetY - 12),
+    left: right <= chart.getWidth() ? offsetX + gap : Math.max(gap, offsetX - tooltipWidth - gap),
+    top: bottom <= chart.getHeight() ? offsetY + gap : Math.max(gap, offsetY - tooltipHeight - gap),
   };
 }
 

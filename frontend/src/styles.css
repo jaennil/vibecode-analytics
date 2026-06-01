@@ -379,7 +379,6 @@ input {
   color: var(--text);
   font-size: 12px;
   pointer-events: none;
-  transform: translate(-50%, -100%);
 }
 
 .chart-empty {
