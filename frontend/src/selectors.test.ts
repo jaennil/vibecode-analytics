@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   compactPath,
+  filterDetailChartWindow,
   filterGlobalChartWindow,
   findNearestEventForPrompt,
   findSpikeEvent,
   formatAverage,
   newTokens,
+  promptsForEventWindow,
   promptsForTurn,
   sortEventsByTime,
   tokenSums,
@@ -103,6 +105,12 @@ describe("selectors", () => {
     expect(promptsForTurn(prompts, events, "e2").map((item) => item.id)).toEqual(["after-first", "at-second"]);
   });
 
+  it("keeps the latest prompt attached to later tool-call events", () => {
+    const laterToolCall = event("tool-call", 1, 1, { timestamp: "2026-05-01T10:05:00Z" });
+    const prompts = [prompt("p1", "2026-05-01T10:00:00Z"), prompt("p2", "2026-05-01T10:03:00Z")];
+    expect(promptsForEventWindow(prompts, laterToolCall).map((item) => item.id)).toEqual(["p2"]);
+  });
+
   it("finds the event nearest to a prompt", () => {
     const events = [
       event("early", 1, 1, { timestamp: "2026-05-01T10:00:00Z" }),
@@ -144,5 +152,27 @@ describe("selectors", () => {
     ];
     const prompts = [prompt("p1", "2026-05-01T10:10:00Z"), prompt("p2", "2026-05-01T10:20:00Z")];
     expect(filterGlobalChartWindow(events, prompts, 15, 2).events.map((item) => item.id)).toEqual(["latest"]);
+  });
+
+  it("filters the detail chart from the earliest retained prompt", () => {
+    const events = [
+      event("before", 1, 1, { timestamp: "2026-05-01T10:00:00Z" }),
+      event("first-call", 1, 1, { timestamp: "2026-05-01T10:12:00Z" }),
+      event("tool-call", 1, 1, { timestamp: "2026-05-01T10:13:00Z" }),
+      event("last-call", 1, 1, { timestamp: "2026-05-01T10:25:00Z" }),
+    ];
+    const prompts = [prompt("p1", "2026-05-01T10:10:00Z"), prompt("p2", "2026-05-01T10:20:00Z")];
+    const window = filterDetailChartWindow(events, prompts, 0, 2);
+    expect(window.events.map((item) => item.id)).toEqual(["first-call", "tool-call", "last-call"]);
+    expect(window.prompts.map((item) => item.id)).toEqual(["p1", "p2"]);
+  });
+
+  it("filters the detail chart by recent minutes relative to session end", () => {
+    const events = [
+      event("early", 1, 1, { timestamp: "2026-05-01T10:00:00Z" }),
+      event("middle", 1, 1, { timestamp: "2026-05-01T10:30:00Z" }),
+      event("latest", 1, 1, { timestamp: "2026-05-01T11:00:00Z" }),
+    ];
+    expect(filterDetailChartWindow(events, [], 45, 0).events.map((item) => item.id)).toEqual(["middle", "latest"]);
   });
 });

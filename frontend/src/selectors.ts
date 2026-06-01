@@ -11,6 +11,11 @@ export interface GlobalChartWindow {
   prompts: Prompt[];
 }
 
+export interface DetailChartWindow {
+  events: TokenEvent[];
+  prompts: Prompt[];
+}
+
 export function newTokens(event?: Pick<TokenEvent, "input" | "cacheCreate" | "output" | "reasoning"> | null): number {
   if (!event) return 0;
   return Number(event.input || 0) + Number(event.cacheCreate || 0) + Number(event.output || 0) + Number(event.reasoning || 0);
@@ -79,6 +84,18 @@ export function promptsForTurn(prompts: Prompt[], events: TokenEvent[], eventId:
   });
 }
 
+export function promptsForEventWindow(prompts: Prompt[], event: TokenEvent): Prompt[] {
+  const eventTime = new Date(event.timestamp).getTime();
+  const sortedPrompts = [...prompts]
+    .filter((prompt) => new Date(prompt.timestamp).getTime() <= eventTime)
+    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+  return sortedPrompts.at(-1) ? [sortedPrompts.at(-1)!] : [];
+}
+
+export function promptCountForEventWindow(prompts: Prompt[], event: TokenEvent): number {
+  return promptsForEventWindow(prompts, event).length;
+}
+
 export function findNearestEventForPrompt(events: TokenEvent[], prompt: Prompt): TokenEvent | null {
   const promptTime = new Date(prompt.timestamp).getTime();
   return events.reduce<TokenEvent | null>((nearest, event) => {
@@ -108,6 +125,36 @@ export function filterGlobalChartWindow(events: TokenEvent[], prompts: Prompt[],
   return {
     events: sortedEvents.filter((event) => new Date(event.timestamp).getTime() >= cutoff),
     prompts: promptLimit > 0 ? visiblePrompts.slice(-promptLimit) : visiblePrompts,
+  };
+}
+
+export function filterDetailChartWindow(events: TokenEvent[], prompts: Prompt[], minutes: number, promptLimit: number): DetailChartWindow {
+  const sortedEvents = sortEventsByTime(events);
+  const sortedPrompts = [...prompts].sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+  if (!sortedEvents.length) return { events: [], prompts: [] };
+  const end = new Date(sortedEvents[sortedEvents.length - 1].timestamp).getTime();
+  let start = Number.NEGATIVE_INFINITY;
+
+  if (promptLimit > 0) {
+    const promptCandidates = sortedPrompts.filter((prompt) => {
+      const time = new Date(prompt.timestamp).getTime();
+      return Number.isFinite(time) && time <= end;
+    });
+    const anchor = promptCandidates[Math.max(0, promptCandidates.length - promptLimit)];
+    start = anchor ? new Date(anchor.timestamp).getTime() : Number.NEGATIVE_INFINITY;
+  } else if (minutes > 0) {
+    start = end - minutes * 60 * 1000;
+  }
+
+  return {
+    events: sortedEvents.filter((event) => {
+      const time = new Date(event.timestamp).getTime();
+      return time >= start && time <= end;
+    }),
+    prompts: sortedPrompts.filter((prompt) => {
+      const time = new Date(prompt.timestamp).getTime();
+      return time >= start && time <= end;
+    }),
   };
 }
 

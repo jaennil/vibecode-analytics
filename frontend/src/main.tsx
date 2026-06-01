@@ -5,18 +5,20 @@ import type { EChartsOption } from "echarts";
 import { fetchDashboard } from "./api";
 import {
   compactPath,
+  filterDetailChartWindow,
   filterGlobalChartWindow,
   findNearestEventForPrompt,
   formatAverage,
   formatNumber,
   newTokens,
-  promptsForTurn,
+  promptCountForEventWindow,
+  promptsForEventWindow,
   promptsInWindow,
   sortEventsByTime,
   tokenSums,
   visibleBreakdownRows,
 } from "./selectors";
-import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Source, TokenEvent } from "./types";
+import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Source, TokenEvent, TokenTotals } from "./types";
 import "./styles.css";
 
 type Tab = "dashboard" | "projects" | "sessions" | "detail" | "raw";
@@ -243,52 +245,70 @@ function Sessions({
 function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | null; events: TokenEvent[]; prompts: Prompt[]; sessions: SessionSummary[] }) {
   const orderedEvents = useMemo(() => sortEventsByTime(events), [events]);
   const session = sessions.find((item) => item.id === sessionId);
+  const [minutes, setMinutes] = useState(0);
+  const [promptLimit, setPromptLimit] = useState(0);
+  const [showSum, setShowSum] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const visible = useMemo(() => filterDetailChartWindow(orderedEvents, prompts, minutes, promptLimit), [minutes, orderedEvents, promptLimit, prompts]);
 
   useEffect(() => {
-    if (!orderedEvents.length) {
+    if (!visible.events.length) {
       setSelectedEventId(null);
       return;
     }
     setSelectedEventId((current) => {
-      if (current && orderedEvents.some((event) => event.id === current)) return current;
-      const spike = session?.spikeEventId ? orderedEvents.find((event) => event.id === session.spikeEventId) : undefined;
-      return spike?.id ?? orderedEvents.at(-1)?.id ?? null;
+      if (current && visible.events.some((event) => event.id === current)) return current;
+      const spike = session?.spikeEventId ? visible.events.find((event) => event.id === session.spikeEventId) : undefined;
+      return spike?.id ?? visible.events.at(-1)?.id ?? null;
     });
-  }, [orderedEvents, session?.spikeEventId, sessionId]);
+  }, [session?.spikeEventId, sessionId, visible.events]);
 
   if (!sessionId) return <Empty text="Select a session from the Sessions tab to inspect it." />;
   if (!orderedEvents.length) return <Empty text="No token events are available for this session in the loaded range." />;
-  const selectedEvent = orderedEvents.find((event) => event.id === selectedEventId) ?? orderedEvents.at(-1)!;
-  const eventPrompts = promptsForTurn(prompts, orderedEvents, selectedEvent.id);
-  const selectedPrompt = prompts.find((prompt) => prompt.id === selectedPromptId) ?? eventPrompts.at(-1) ?? null;
-  const selectedIndex = orderedEvents.findIndex((event) => event.id === selectedEvent.id);
-  const sums = tokenSums(orderedEvents);
+  if (!visible.events.length) return <Empty text="No token events match the detail filters." />;
+  const selectedEvent = visible.events.find((event) => event.id === selectedEventId) ?? visible.events.at(-1)!;
+  const eventPrompts = promptsForEventWindow(visible.prompts, selectedEvent);
+  const selectedPrompt = visible.prompts.find((prompt) => prompt.id === selectedPromptId) ?? eventPrompts.at(-1) ?? null;
+  const selectedIndex = visible.events.findIndex((event) => event.id === selectedEvent.id);
+  const sums = tokenSums(visible.events);
   const selectEvent = (eventId: string) => {
     setSelectedEventId(eventId);
     setSelectedPromptId(null);
   };
   const selectPrompt = (prompt: Prompt) => {
     setSelectedPromptId(prompt.id);
-    const nearest = findNearestEventForPrompt(orderedEvents, prompt);
+    const nearest = findNearestEventForPrompt(visible.events, prompt);
     if (nearest) setSelectedEventId(nearest.id);
   };
   return (
     <section className="panel detail">
       <PanelHead title={session ? `${session.source} / ${session.projectName} / ${session.name}` : "Session detail"} meta={session ? compactPath(session.projectPath || session.file) : ""} />
       <section className="metrics compact">
-        <Metric label="Events" value={String(events.length)} note={`${prompts.length} prompts`} />
-        <Metric label="New Tokens" value={formatNumber(sums.newTokens)} note="selected session" />
+        <Metric label="Events" value={String(visible.events.length)} note={`${visible.prompts.length} prompts`} />
+        <Metric label="New Tokens" value={formatNumber(sums.newTokens)} note="visible window" />
         <Metric label="Cache Read" value={formatNumber(sums.cacheRead)} note="reused context" />
         <Metric label="Output" value={formatNumber(sums.output)} note="answer tokens" />
       </section>
       <div className="detail-workspace">
         <SessionDetailChart
-          events={orderedEvents}
-          prompts={prompts}
+          events={visible.events}
+          prompts={visible.prompts}
           selectedEventId={selectedEvent.id}
           selectedPromptId={selectedPrompt?.id ?? null}
+          minutes={minutes}
+          promptLimit={promptLimit}
+          showSum={showSum}
+          sums={sums}
+          onMinutesChange={(value) => {
+            setMinutes(value);
+            if (value > 0) setPromptLimit(0);
+          }}
+          onPromptLimitChange={(value) => {
+            setPromptLimit(value);
+            if (value > 0) setMinutes(0);
+          }}
+          onToggleSum={() => setShowSum((current) => !current)}
           onSelectEvent={selectEvent}
           onSelectPrompt={selectPrompt}
         />
@@ -297,18 +317,18 @@ function Detail({ sessionId, events, prompts, sessions }: { sessionId: string | 
           prompts={eventPrompts}
           selectedPrompt={selectedPrompt}
           onSelectPrompt={setSelectedPromptId}
-          onPrevious={() => selectEvent(orderedEvents[selectedIndex - 1].id)}
-          onNext={() => selectEvent(orderedEvents[selectedIndex + 1].id)}
+          onPrevious={() => selectEvent(visible.events[selectedIndex - 1].id)}
+          onNext={() => selectEvent(visible.events[selectedIndex + 1].id)}
           hasPrevious={selectedIndex > 0}
-          hasNext={selectedIndex < orderedEvents.length - 1}
+          hasNext={selectedIndex < visible.events.length - 1}
         />
       </div>
-      <SessionEventTable events={orderedEvents} selectedEventId={selectedEvent.id} onSelectEvent={selectEvent} />
+      <SessionEventTable events={visible.events} selectedEventId={selectedEvent.id} onSelectEvent={selectEvent} />
     </section>
   );
 }
 
-type DetailMode = "turn" | "cumulative";
+type DetailMode = "line" | "breakdown" | "cumulative";
 type DetailSeriesKey = "input" | "cacheCreate" | "output" | "reasoning";
 
 const detailSeries: Array<{ key: DetailSeriesKey; label: string; color: string }> = [
@@ -323,6 +343,13 @@ function SessionDetailChart({
   prompts,
   selectedEventId,
   selectedPromptId,
+  minutes,
+  promptLimit,
+  showSum,
+  sums,
+  onMinutesChange,
+  onPromptLimitChange,
+  onToggleSum,
   onSelectEvent,
   onSelectPrompt,
 }: {
@@ -330,13 +357,19 @@ function SessionDetailChart({
   prompts: Prompt[];
   selectedEventId: string;
   selectedPromptId: string | null;
+  minutes: number;
+  promptLimit: number;
+  showSum: boolean;
+  sums: TokenTotals;
+  onMinutesChange: (minutes: number) => void;
+  onPromptLimitChange: (promptLimit: number) => void;
+  onToggleSum: () => void;
   onSelectEvent: (eventId: string) => void;
   onSelectPrompt: (prompt: Prompt) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const [mode, setMode] = useState<DetailMode>("turn");
-  const [showTotal, setShowTotal] = useState(false);
+  const [mode, setMode] = useState<DetailMode>("line");
   const [showCacheRead, setShowCacheRead] = useState(false);
   const [enabled, setEnabled] = useState<Record<DetailSeriesKey, boolean>>({
     input: true,
@@ -348,7 +381,7 @@ function SessionDetailChart({
   useEffect(() => {
     if (!ref.current) return;
     const chart = chartInstance(chartRef, ref.current);
-    chart.setOption(sessionDetailOption(events, prompts, selectedEventId, selectedPromptId, enabled, mode, showTotal, showCacheRead), { notMerge: true });
+    chart.setOption(sessionDetailOption(events, prompts, selectedEventId, selectedPromptId, enabled, mode, showCacheRead), { notMerge: true });
     const click = (params: { seriesName?: string; data?: unknown }) => {
       const id = chartDataId(params.data);
       if (!id) return;
@@ -366,7 +399,7 @@ function SessionDetailChart({
       chart.off("click", click);
       window.removeEventListener("resize", resize);
     };
-  }, [enabled, events, mode, onSelectEvent, onSelectPrompt, prompts, selectedEventId, selectedPromptId, showCacheRead, showTotal]);
+  }, [enabled, events, mode, onSelectEvent, onSelectPrompt, prompts, selectedEventId, selectedPromptId, showCacheRead]);
 
   useEffect(() => () => disposeChart(chartRef), []);
 
@@ -374,6 +407,43 @@ function SessionDetailChart({
   return (
     <section className="detail-chart-region">
       <div className="detail-toolbar">
+        <div className="detail-range-controls" aria-label="detail range">
+          <label>
+            <span>Time</span>
+            <select value={minutes} onChange={(event) => onMinutesChange(Number(event.target.value))}>
+              <option value={0}>All</option>
+              <option value={5}>Last 5m</option>
+              <option value={10}>Last 10m</option>
+              <option value={60}>Last 1h</option>
+              <option value={360}>Last 6h</option>
+              <option value={1440}>Last 24h</option>
+            </select>
+          </label>
+          <label>
+            <span>Prompts</span>
+            <select value={promptLimit} onChange={(event) => onPromptLimitChange(Number(event.target.value))}>
+              <option value={0}>None</option>
+              <option value={1}>Last prompt</option>
+              <option value={2}>Last 2 prompts</option>
+              <option value={3}>Last 3 prompts</option>
+              <option value={5}>Last 5 prompts</option>
+              <option value={10}>Last 10 prompts</option>
+            </select>
+          </label>
+          <button type="button" className={showSum ? "quiet-button active" : "quiet-button"} aria-pressed={showSum} onClick={onToggleSum}>
+            SUM
+          </button>
+        </div>
+        {showSum && (
+          <div className="detail-sum-grid" aria-label="detail visible totals">
+            <GlobalSummaryItem label="New tokens" value={formatNumber(sums.newTokens)} />
+            <GlobalSummaryItem label="Fresh input" value={formatNumber(sums.input)} />
+            <GlobalSummaryItem label="Cache write" value={formatNumber(sums.cacheCreate)} />
+            <GlobalSummaryItem label="Cache read" value={formatNumber(sums.cacheRead)} />
+            <GlobalSummaryItem label="Output" value={formatNumber(sums.output)} />
+            <GlobalSummaryItem label="Reasoning" value={formatNumber(sums.reasoning)} />
+          </div>
+        )}
         <div className="series-toggles" aria-label="token series">
           {detailSeries.map((series) => (
             <label className="series-toggle" key={series.key}>
@@ -387,11 +457,6 @@ function SessionDetailChart({
             </label>
           ))}
           <label className="series-toggle">
-            <input type="checkbox" checked={showTotal} onChange={() => setShowTotal((current) => !current)} />
-            <i className="total-swatch" />
-            <span>New tokens</span>
-          </label>
-          <label className="series-toggle">
             <input type="checkbox" checked={showCacheRead} onChange={() => setShowCacheRead((current) => !current)} />
             <i className="cache-swatch" />
             <span>Cache read</span>
@@ -399,8 +464,11 @@ function SessionDetailChart({
         </div>
         <div className="detail-chart-actions">
           <div className="segmented" aria-label="chart mode">
-            <button type="button" className={mode === "turn" ? "active" : ""} aria-pressed={mode === "turn"} onClick={() => setMode("turn")}>
-              Turns
+            <button type="button" className={mode === "line" ? "active" : ""} aria-pressed={mode === "line"} onClick={() => setMode("line")}>
+              Line
+            </button>
+            <button type="button" className={mode === "breakdown" ? "active" : ""} aria-pressed={mode === "breakdown"} onClick={() => setMode("breakdown")}>
+              Breakdown
             </button>
             <button type="button" className={mode === "cumulative" ? "active" : ""} aria-pressed={mode === "cumulative"} onClick={() => setMode("cumulative")}>
               Cumulative
@@ -1020,7 +1088,6 @@ function sessionDetailOption(
   selectedPromptId: string | null,
   enabled: Record<DetailSeriesKey, boolean>,
   mode: DetailMode,
-  showTotal: boolean,
   showCacheRead: boolean,
 ): EChartsOption {
   const cacheAxis = showCacheRead ? 1 : -1;
@@ -1055,32 +1122,52 @@ function sessionDetailOption(
     },
   ];
   const series: NonNullable<EChartsOption["series"]> = [];
-  detailSeries.forEach((definition) => {
-    if (!enabled[definition.key]) return;
-    series.push({
-      type: mode === "turn" ? "bar" : "line",
-      name: definition.label,
-      data: detailPoints(events, definition.key, mode),
-      stack: mode === "turn" ? "turn tokens" : undefined,
-      barMaxWidth: 22,
-      symbol: "none",
-      itemStyle: { color: definition.color },
-      lineStyle: { color: definition.color, width: 1.8 },
-      emphasis: { focus: "series" },
-    });
-  });
-  if (showTotal) {
+  const values = events.map((event) => newTokens(event));
+  const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+
+  if (mode === "line") {
     series.push({
       type: "line",
       name: "New tokens",
-      data: detailTotalPoints(events, mode),
-      symbol: events.length < 80 ? "circle" : "none",
-      symbolSize: 5,
-      lineStyle: { color: "#76d99f", width: 2.2 },
+      data: detailTotalPoints(events, "line"),
+      showSymbol: events.length < 80,
+      symbol: "circle",
+      symbolSize: 6,
+      lineStyle: { color: "#76d99f", width: 2.5 },
       itemStyle: { color: "#76d99f" },
+      areaStyle: { color: "#76d99f22" },
       emphasis: { focus: "series" },
+      markPoint: {
+        symbol: "circle",
+        symbolSize: 10,
+        label: { show: false },
+        itemStyle: { color: "#ff766f", borderColor: "#08110f", borderWidth: 2 },
+        data: [{ type: "max", name: "Spike" }],
+      },
+      markLine: {
+        silent: true,
+        symbol: "none",
+        label: { color: "#9bb2ad", formatter: `avg ${formatNumber(average)}`, position: "insideEndTop" },
+        lineStyle: { color: "#80919a", type: "dashed", width: 1 },
+        data: [{ yAxis: average }],
+      },
+    });
+  } else {
+    detailSeries.forEach((definition) => {
+      if (!enabled[definition.key]) return;
+      series.push({
+        type: "line",
+        name: definition.label,
+        data: detailPoints(events, definition.key, mode),
+        symbol: events.length < 80 ? "circle" : "none",
+        symbolSize: 5,
+        itemStyle: { color: definition.color },
+        lineStyle: { color: definition.color, width: 1.8 },
+        emphasis: { focus: "series" },
+      });
     });
   }
+
   if (showCacheRead) {
     series.push({
       type: "line",
@@ -1094,6 +1181,22 @@ function sessionDetailOption(
     });
   }
   series.push({
+    id: "detail-prompt-lines",
+    type: "line",
+    name: "Prompt lines",
+    data: [],
+    symbol: "none",
+    lineStyle: { opacity: 0 },
+    tooltip: { show: false },
+    markLine: {
+      silent: true,
+      symbol: "none",
+      label: { show: false },
+      lineStyle: { color: "#edf18a", type: "dotted", width: 1 },
+      data: prompts.map((prompt) => ({ xAxis: prompt.timestamp })),
+    },
+  });
+  series.push({
     type: "scatter",
     name: "Prompts",
     xAxisIndex: promptAxis,
@@ -1104,6 +1207,7 @@ function sessionDetailOption(
     })),
     symbol: "diamond",
     symbolSize: (value: unknown) => (chartDataId(value) === selectedPromptId ? 15 : 10),
+    tooltip: { formatter: (params: unknown) => detailPromptTooltip(params, prompts) },
   });
   const selectedIndex = events.findIndex((event) => event.id === selectedEventId);
   if (selectedIndex >= 0) {
@@ -1135,6 +1239,7 @@ function sessionDetailOption(
     legend: { show: false },
     tooltip: {
       trigger: "axis",
+      confine: true,
       axisPointer: { type: "line" },
       backgroundColor: "#132024",
       borderColor: "#39525a",
@@ -1179,7 +1284,7 @@ function detailTotalPoints(events: TokenEvent[], mode: DetailMode): Array<[strin
 }
 
 function detailTotalAt(events: TokenEvent[], index: number, mode: DetailMode): number {
-  if (mode === "turn") return newTokens(events[index]);
+  if (mode !== "cumulative") return newTokens(events[index]);
   return events.slice(0, index + 1).reduce((sum, event) => sum + newTokens(event), 0);
 }
 
@@ -1187,13 +1292,32 @@ function detailTooltip(params: unknown, events: TokenEvent[], prompts: Prompt[])
   const items = Array.isArray(params) ? params : [];
   const id = items.map((item) => chartDataId((item as { data?: unknown }).data)).find((value) => events.some((event) => event.id === value));
   const event = events.find((candidate) => candidate.id === id);
-  if (!event) return "";
+  if (!event) {
+    const promptId = items.map((item) => chartDataId((item as { data?: unknown }).data)).find((value) => prompts.some((prompt) => prompt.id === value));
+    const prompt = prompts.find((candidate) => candidate.id === promptId);
+    return prompt ? promptTooltip(prompt) : "";
+  }
   const rows = visibleBreakdownRows(event);
-  const promptCount = promptsForTurn(prompts, events, event.id).length;
+  const promptCount = promptCountForEventWindow(prompts, event);
   return [
     `<strong>${new Date(event.timestamp).toLocaleString()}</strong>`,
     ...rows.map((row) => `<div class="chart-tooltip-row"><span>${row.label}</span><b>${formatNumber(row.value)}</b></div>`),
     ...(promptCount ? [`<div class="chart-tooltip-row"><span>Prompts</span><b>${promptCount}</b></div>`] : []),
+  ].join("");
+}
+
+function detailPromptTooltip(params: unknown, prompts: Prompt[]): string {
+  const id = chartDataId((params as { data?: unknown })?.data);
+  const prompt = prompts.find((candidate) => candidate.id === id);
+  return prompt ? promptTooltip(prompt) : "";
+}
+
+function promptTooltip(prompt: Prompt): string {
+  return [
+    `<strong>${escapeHtml(new Date(prompt.timestamp).toLocaleString())}</strong>`,
+    `<div class="chart-tooltip-meta">User prompt</div>`,
+    `<div class="chart-tooltip-row"><span>Images</span><b>${formatNumber(prompt.imageCount || 0)}</b></div>`,
+    `<div class="chart-tooltip-text">${escapeHtml(shortText(prompt.text, 240))}</div>`,
   ].join("");
 }
 
@@ -1205,6 +1329,20 @@ function chartDataId(value: unknown): string | null {
 
 function formatPercent(value: number): string {
   return `${Number(value).toFixed(1)}%`;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function shortText(value: string, limit: number): string {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}...` : text;
 }
 
 function line(name: string, data: Array<[string, number]>, color: string, width = 1.8) {

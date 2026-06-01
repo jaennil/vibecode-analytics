@@ -406,22 +406,39 @@ input {
 }
 
 .detail-toolbar {
-  display: flex;
+  display: grid;
   gap: 12px;
-  align-items: start;
-  justify-content: space-between;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
 
 .series-toggles,
 .detail-chart-actions,
+.detail-range-controls,
 .turn-navigation,
 .prompt-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.detail-range-controls {
+  align-items: end;
+}
+
+.detail-range-controls label {
+  min-width: 160px;
+}
+
+.detail-range-controls select {
+  min-height: 34px;
+}
+
+.detail-sum-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .series-toggle {
@@ -486,6 +503,7 @@ input {
 }
 
 .segmented .active,
+.quiet-button.active,
 .prompt-tabs .active {
   border-color: var(--fresh);
   background: rgba(118, 217, 159, 0.14);
@@ -624,6 +642,17 @@ input {
   overflow-wrap: anywhere;
 }
 
+.chart-tooltip-text {
+  max-width: 280px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
 .empty {
   padding: 24px;
   color: var(--muted);
@@ -699,6 +728,18 @@ th {
 
   .detail-toolbar {
     display: grid;
+  }
+
+  .detail-range-controls {
+    display: grid;
+  }
+
+  .detail-range-controls label {
+    min-width: 0;
+  }
+
+  .detail-sum-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .panel-head {
