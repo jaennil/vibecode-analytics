@@ -733,6 +733,8 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
           <span>Last prompts</span>
           <select value={promptLimit} onChange={(event) => setPromptLimit(Number(event.target.value))}>
             <option value={0}>All prompts</option>
+            <option value={1}>Last prompt</option>
+            <option value={2}>Last 2 prompts</option>
             <option value={5}>Last 5 prompts</option>
             <option value={10}>Last 10 prompts</option>
             <option value={25}>Last 25 prompts</option>
