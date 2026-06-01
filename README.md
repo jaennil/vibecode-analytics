@@ -18,6 +18,9 @@ http://127.0.0.1:5173
 The Go API listens on `http://127.0.0.1:8787`. In Compose, Vite proxies
 `/api` requests to the `api` service.
 
+Swagger UI is available at `http://127.0.0.1:8787/swagger/`. The embedded
+OpenAPI document is served at `http://127.0.0.1:8787/openapi.json`.
+
 The Compose stack also starts Prometheus at `http://127.0.0.1:9090` and
 Grafana at `http://127.0.0.1:3000`. Grafana is provisioned with a Prometheus
 datasource and a "Live Token Monitor" dashboard. The default login is
@@ -66,6 +69,8 @@ transmit prompts, paths, tokens, or logs externally.
 - `GET /api/v2/sessions?range=...`
 - `GET /api/v2/summary?range=...`
 - `GET /metrics`
+- `GET /swagger/`
+- `GET /openapi.json`
 
 All list endpoints also accept `projectId` and `sessionId`.
 

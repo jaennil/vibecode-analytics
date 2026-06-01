@@ -1,0 +1,441 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Live Token Monitor API",
+    "version": "2.0.0",
+    "description": "Local API for Codex CLI and Claude Code token telemetry."
+  },
+  "servers": [
+    { "url": "/" }
+  ],
+  "tags": [
+    { "name": "Telemetry" },
+    { "name": "Operations" }
+  ],
+  "paths": {
+    "/api/v2/health": {
+      "get": {
+        "tags": ["Operations"],
+        "summary": "Get API health",
+        "responses": {
+          "200": {
+            "description": "Current API and refresh status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/refresh": {
+      "post": {
+        "tags": ["Operations"],
+        "summary": "Refresh local log data",
+        "responses": {
+          "200": {
+            "description": "Refresh result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RefreshResult" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v2/events": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "List token events",
+        "parameters": [
+          { "$ref": "#/components/parameters/Range" },
+          { "$ref": "#/components/parameters/Source" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered token events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["events"],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Event" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v2/prompts": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "List user prompts",
+        "parameters": [
+          { "$ref": "#/components/parameters/Range" },
+          { "$ref": "#/components/parameters/Source" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered user prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["prompts"],
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Prompt" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v2/projects": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "List project summaries",
+        "parameters": [
+          { "$ref": "#/components/parameters/Range" },
+          { "$ref": "#/components/parameters/Source" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered project summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["projects"],
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ProjectSummary" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v2/sessions": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "List session summaries",
+        "parameters": [
+          { "$ref": "#/components/parameters/Range" },
+          { "$ref": "#/components/parameters/Source" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered session summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["sessions"],
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SessionSummary" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v2/summary": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Get token summary",
+        "parameters": [
+          { "$ref": "#/components/parameters/Range" },
+          { "$ref": "#/components/parameters/Source" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered token summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Summary" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": ["Operations"],
+        "summary": "Get Prometheus metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Range": {
+        "name": "range",
+        "in": "query",
+        "description": "Time range. Defaults to 24h.",
+        "schema": {
+          "type": "string",
+          "enum": ["live", "24h", "7d", "30d", "all"],
+          "default": "24h"
+        }
+      },
+      "Source": {
+        "name": "source",
+        "in": "query",
+        "description": "Log source. Defaults to all.",
+        "schema": {
+          "type": "string",
+          "enum": ["all", "codex", "claude"],
+          "default": "all"
+        }
+      },
+      "ProjectId": {
+        "name": "projectId",
+        "in": "query",
+        "description": "Optional project identifier.",
+        "schema": { "type": "string" }
+      },
+      "SessionId": {
+        "name": "sessionId",
+        "in": "query",
+        "description": "Optional session identifier.",
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid query parameter",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status", "generatedAt", "lastFiles", "lastEvents", "lastPrompts", "codexRoots", "claudeRoots", "databasePath"],
+        "properties": {
+          "status": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "lastRefresh": { "type": "string", "format": "date-time" },
+          "lastFiles": { "type": "integer" },
+          "lastEvents": { "type": "integer" },
+          "lastPrompts": { "type": "integer" },
+          "codexRoots": { "type": "array", "items": { "type": "string" } },
+          "claudeRoots": { "type": "array", "items": { "type": "string" } },
+          "databasePath": { "type": "string" }
+        }
+      },
+      "RefreshResult": {
+        "type": "object",
+        "required": ["generatedAt", "files", "events", "prompts", "importedEvents", "importedPrompts"],
+        "properties": {
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "files": { "type": "integer" },
+          "events": { "type": "integer" },
+          "prompts": { "type": "integer" },
+          "importedEvents": { "type": "integer" },
+          "importedPrompts": { "type": "integer" }
+        }
+      },
+      "TokenTotals": {
+        "type": "object",
+        "required": ["newTokens", "input", "cacheCreate", "cacheRead", "output", "reasoning", "total"],
+        "properties": {
+          "newTokens": { "type": "integer", "format": "int64" },
+          "input": { "type": "integer", "format": "int64" },
+          "cacheCreate": { "type": "integer", "format": "int64" },
+          "cacheRead": { "type": "integer", "format": "int64" },
+          "output": { "type": "integer", "format": "int64" },
+          "reasoning": { "type": "integer", "format": "int64" },
+          "total": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": ["id", "source", "timestamp", "projectId", "projectName", "projectPath", "sessionId", "sessionName", "session", "file", "model", "input", "cacheCreate", "cacheRead", "output", "reasoning", "total"],
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "$ref": "#/components/schemas/Source" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "projectId": { "type": "string" },
+          "projectName": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "sessionName": { "type": "string" },
+          "session": { "type": "string" },
+          "file": { "type": "string" },
+          "model": { "type": "string" },
+          "input": { "type": "integer", "format": "int64" },
+          "cacheCreate": { "type": "integer", "format": "int64" },
+          "cacheRead": { "type": "integer", "format": "int64" },
+          "output": { "type": "integer", "format": "int64" },
+          "reasoning": { "type": "integer", "format": "int64" },
+          "total": { "type": "integer", "format": "int64" },
+          "cumulativeTotal": { "type": "integer", "format": "int64", "nullable": true },
+          "contextWindow": { "type": "integer", "format": "int64", "nullable": true },
+          "contextPercent": { "type": "number", "format": "double", "nullable": true },
+          "fiveHourPercent": { "type": "number", "format": "double", "nullable": true },
+          "weeklyPercent": { "type": "number", "format": "double", "nullable": true }
+        }
+      },
+      "Prompt": {
+        "type": "object",
+        "required": ["id", "source", "timestamp", "projectId", "projectName", "projectPath", "sessionId", "sessionName", "session", "file", "text", "imageCount"],
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "$ref": "#/components/schemas/Source" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "projectId": { "type": "string" },
+          "projectName": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "sessionName": { "type": "string" },
+          "session": { "type": "string" },
+          "file": { "type": "string" },
+          "text": { "type": "string" },
+          "imageCount": { "type": "integer" }
+        }
+      },
+      "DailyTotal": {
+        "type": "object",
+        "required": ["day", "total", "events", "spike", "average"],
+        "properties": {
+          "day": { "type": "string", "format": "date" },
+          "total": { "type": "integer", "format": "int64" },
+          "events": { "type": "integer" },
+          "spike": { "type": "integer", "format": "int64" },
+          "average": { "type": "number", "format": "double" }
+        }
+      },
+      "ProjectSummary": {
+        "type": "object",
+        "required": ["id", "source", "name", "path", "events", "prompts", "totals", "latestTime", "spikeEventId", "spikeNewTokens"],
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "$ref": "#/components/schemas/Source" },
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "events": { "type": "integer" },
+          "prompts": { "type": "integer" },
+          "totals": { "$ref": "#/components/schemas/TokenTotals" },
+          "latestTime": { "type": "string", "format": "date-time" },
+          "spikeEventId": { "type": "string" },
+          "spikeNewTokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "SessionSummary": {
+        "type": "object",
+        "required": ["id", "source", "projectId", "projectName", "projectPath", "name", "session", "file", "events", "prompts", "totals", "firstTime", "latestTime", "spikeEventId", "spikeNewTokens"],
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "$ref": "#/components/schemas/Source" },
+          "projectId": { "type": "string" },
+          "projectName": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "name": { "type": "string" },
+          "session": { "type": "string" },
+          "file": { "type": "string" },
+          "events": { "type": "integer" },
+          "prompts": { "type": "integer" },
+          "totals": { "$ref": "#/components/schemas/TokenTotals" },
+          "firstTime": { "type": "string", "format": "date-time" },
+          "latestTime": { "type": "string", "format": "date-time" },
+          "spikeEventId": { "type": "string" },
+          "spikeNewTokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "required": ["generatedAt", "range", "events", "prompts", "totals", "latest", "spike", "daily"],
+        "properties": {
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "range": { "type": "string" },
+          "events": { "type": "integer" },
+          "prompts": { "type": "integer" },
+          "totals": { "$ref": "#/components/schemas/TokenTotals" },
+          "latest": { "allOf": [{ "$ref": "#/components/schemas/Event" }], "nullable": true },
+          "spike": { "allOf": [{ "$ref": "#/components/schemas/Event" }], "nullable": true },
+          "daily": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DailyTotal" }
+          }
+        }
+      },
+      "Source": {
+        "type": "string",
+        "enum": ["codex", "claude"]
+      }
+    }
+  }
+}

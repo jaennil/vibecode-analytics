@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,12 @@ import (
 	"live-token-monitor/internal/domain"
 	"live-token-monitor/internal/service"
 )
+
+//go:embed static/openapi.json
+var openAPISpec []byte
+
+//go:embed static/swagger.html
+var swaggerPage []byte
 
 type API struct {
 	service *service.Service
@@ -25,6 +32,9 @@ func New(svc *service.Service, corsOrigins []string) http.Handler {
 		api.origins[origin] = true
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/swagger", api.handleSwaggerRedirect)
+	mux.HandleFunc("/swagger/", api.handleSwagger)
+	mux.HandleFunc("/openapi.json", api.handleOpenAPI)
 	mux.HandleFunc("/api/v2/health", api.handleHealth)
 	mux.HandleFunc("/metrics", api.handleMetrics)
 	mux.HandleFunc("/api/v2/refresh", api.handleRefresh)
@@ -34,6 +44,31 @@ func New(svc *service.Service, corsOrigins []string) http.Handler {
 	mux.HandleFunc("/api/v2/sessions", api.handleSessions)
 	mux.HandleFunc("/api/v2/summary", api.handleSummary)
 	return api.cors(api.observe(mux))
+}
+
+func (a *API) handleSwaggerRedirect(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+	http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+}
+
+func (a *API) handleSwagger(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(swaggerPage)
+}
+
+func (a *API) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(openAPISpec)
 }
 
 func (a *API) cors(next http.Handler) http.Handler {

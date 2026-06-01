@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,6 +82,45 @@ func TestCORSPreflight(t *testing.T) {
 	}
 	if rec.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:5173" {
 		t.Fatalf("cors=%q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
+
+func TestOpenAPIEndpoint(t *testing.T) {
+	handler := testHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("invalid JSON body=%s", rec.Body.String())
+	}
+	for _, want := range []string{`"openapi":"3.0.3"`, `"/api/v2/events"`, `"/metrics"`} {
+		if !strings.Contains(strings.ReplaceAll(rec.Body.String(), " ", ""), want) {
+			t.Fatalf("missing %q in body=%s", want, rec.Body.String())
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestSwaggerEndpoint(t *testing.T) {
+	handler := testHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/swagger/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"SwaggerUIBundle", `url: "/openapi.json"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("missing %q in body=%s", want, rec.Body.String())
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+		t.Fatalf("content-type=%q", got)
 	}
 }
 
