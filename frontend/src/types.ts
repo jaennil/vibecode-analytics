@@ -37,7 +37,7 @@ export interface Prompt {
   sessionName: string;
   session: string;
   file: string;
-  text: string;
+  text?: string;
   imageCount: number;
 }
 

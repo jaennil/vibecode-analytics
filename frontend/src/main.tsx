@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
-import { fetchDashboard } from "./api";
+import { fetchDashboard, fetchPrompt } from "./api";
 import {
   compactPath,
   filterDetailChartWindow,
@@ -348,6 +348,7 @@ function Detail({
   const [showSum, setShowSum] = useStoredState("detail.showSum", false, booleanValue);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const [promptTextById, setPromptTextById] = useState<Record<string, string>>({});
   const visible = useMemo(() => filterDetailChartWindow(orderedEvents, prompts, minutes, promptLimit), [minutes, orderedEvents, promptLimit, prompts]);
 
   useEffect(() => {
@@ -362,14 +363,34 @@ function Detail({
     });
   }, [session?.spikeEventId, target?.id, target?.type, visible.events]);
 
+  const selectedEvent = visible.events.find((event) => event.id === selectedEventId) ?? visible.events.at(-1) ?? null;
+  const eventPrompts = selectedEvent ? promptsForEventWindow(visible.prompts, selectedEvent) : [];
+  const selectedPromptMeta = visible.prompts.find((prompt) => prompt.id === selectedPromptId) ?? eventPrompts.at(-1) ?? null;
+  const selectedPromptText = selectedPromptMeta ? promptTextById[selectedPromptMeta.id] : undefined;
+  const selectedPrompt =
+    selectedPromptMeta && selectedPromptText != null
+      ? { ...selectedPromptMeta, text: selectedPromptText }
+      : selectedPromptMeta;
+  const selectedIndex = selectedEvent ? visible.events.findIndex((event) => event.id === selectedEvent.id) : -1;
+  const sums = tokenSums(visible.events);
+
+  useEffect(() => {
+    if (!selectedPromptMeta || selectedPromptMeta.text != null || selectedPromptText != null) return;
+    const controller = new AbortController();
+    const promptId = selectedPromptMeta.id;
+    void fetchPrompt(selectedPromptMeta.id, controller.signal)
+      .then((prompt) => {
+        setPromptTextById((current) => ({ ...current, [prompt.id]: prompt.text ?? "" }));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPromptTextById((current) => ({ ...current, [promptId]: "" }));
+      });
+    return () => controller.abort();
+  }, [selectedPromptMeta?.id, selectedPromptMeta?.text, selectedPromptText]);
+
   if (!target) return <Empty text="Open a project or session to inspect it." />;
   if (!orderedEvents.length) return <Empty text="No token events are available for this detail target in the loaded range." />;
-  if (!visible.events.length) return <Empty text="No token events match the detail filters." />;
-  const selectedEvent = visible.events.find((event) => event.id === selectedEventId) ?? visible.events.at(-1)!;
-  const eventPrompts = promptsForEventWindow(visible.prompts, selectedEvent);
-  const selectedPrompt = visible.prompts.find((prompt) => prompt.id === selectedPromptId) ?? eventPrompts.at(-1) ?? null;
-  const selectedIndex = visible.events.findIndex((event) => event.id === selectedEvent.id);
-  const sums = tokenSums(visible.events);
+  if (!visible.events.length || !selectedEvent) return <Empty text="No token events match the detail filters." />;
   const selectEvent = (eventId: string) => {
     setSelectedEventId(eventId);
     setSelectedPromptId(null);
@@ -695,7 +716,7 @@ function TurnInspector({
             ))}
           </div>
         )}
-        <div className="prompt-text">{selectedPrompt?.text || "No preceding prompt for this turn."}</div>
+        <div className="prompt-text">{selectedPrompt ? selectedPrompt.text ?? "Loading prompt text..." : "No preceding prompt for this turn."}</div>
         {selectedPrompt && <small>{selectedPrompt.imageCount ? `${selectedPrompt.imageCount} images` : "Text prompt"}</small>}
       </section>
     </aside>
@@ -1384,7 +1405,7 @@ function promptTooltip(prompt: Prompt): string {
     `<strong>${escapeHtml(new Date(prompt.timestamp).toLocaleString())}</strong>`,
     `<div class="chart-tooltip-meta">User prompt</div>`,
     `<div class="chart-tooltip-row"><span>Images</span><b>${formatNumber(prompt.imageCount || 0)}</b></div>`,
-    `<div class="chart-tooltip-text">${escapeHtml(shortText(prompt.text, 240))}</div>`,
+    `<div class="chart-tooltip-text">${escapeHtml(prompt.text ? shortText(prompt.text, 240) : "Prompt text loads in the inspector.")}</div>`,
   ].join("");
 }
 

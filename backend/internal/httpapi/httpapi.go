@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -40,6 +41,7 @@ func New(svc *service.Service, corsOrigins []string) http.Handler {
 	mux.HandleFunc("/api/v2/refresh", api.handleRefresh)
 	mux.HandleFunc("/api/v2/events", api.handleEvents)
 	mux.HandleFunc("/api/v2/prompts", api.handlePrompts)
+	mux.HandleFunc("/api/v2/prompt", api.handlePrompt)
 	mux.HandleFunc("/api/v2/projects", api.handleProjects)
 	mux.HandleFunc("/api/v2/sessions", api.handleSessions)
 	mux.HandleFunc("/api/v2/summary", api.handleSummary)
@@ -153,6 +155,27 @@ func (a *API) handlePrompts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"prompts": prompts})
+}
+
+func (a *API) handlePrompt(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing prompt id"})
+		return
+	}
+	prompt, err := a.service.Prompt(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "prompt not found"})
+			return
+		}
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, prompt)
 }
 
 func (a *API) handleProjects(w http.ResponseWriter, r *http.Request) {
@@ -440,7 +463,7 @@ func (m *httpMetrics) prometheusText() string {
 
 func routeLabel(path string) string {
 	switch path {
-	case "/api/v2/health", "/api/v2/refresh", "/api/v2/events", "/api/v2/prompts", "/api/v2/projects", "/api/v2/sessions", "/api/v2/summary", "/api/v2/dashboard":
+	case "/api/v2/health", "/api/v2/refresh", "/api/v2/events", "/api/v2/prompts", "/api/v2/prompt", "/api/v2/projects", "/api/v2/sessions", "/api/v2/summary", "/api/v2/dashboard":
 		return path
 	default:
 		return "unknown"

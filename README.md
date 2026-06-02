@@ -68,6 +68,7 @@ transmit prompts, paths, tokens, or logs externally.
 - `GET /api/v2/dashboard?range=24h|7d|30d|all|live&source=all|codex|claude`
 - `GET /api/v2/events?range=24h|7d|30d|all|live&source=all|codex|claude`
 - `GET /api/v2/prompts?range=...`
+- `GET /api/v2/prompt?id=...`
 - `GET /api/v2/projects?range=...`
 - `GET /api/v2/sessions?range=...`
 - `GET /api/v2/summary?range=...`
@@ -75,7 +76,9 @@ transmit prompts, paths, tokens, or logs externally.
 - `GET /swagger/`
 - `GET /openapi.json`
 
-All telemetry endpoints also accept `projectId` and `sessionId`.
+All telemetry endpoints also accept `projectId` and `sessionId`. Dashboard
+responses include prompt metadata only; prompt text is loaded through
+`GET /api/v2/prompt?id=...`.
 
 ## Storage
 

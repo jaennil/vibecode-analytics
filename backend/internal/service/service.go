@@ -163,6 +163,13 @@ func (s *Service) Prompts(ctx context.Context, query domain.Query) ([]domain.Pro
 	return s.store.Prompts(ctx, query, s.cfg.MaxPoints, s.cfg.HistoryMaxPoints)
 }
 
+func (s *Service) Prompt(ctx context.Context, id string) (domain.Prompt, error) {
+	if err := s.refreshIfNeeded(ctx); err != nil {
+		return domain.Prompt{}, err
+	}
+	return s.store.Prompt(ctx, id)
+}
+
 func (s *Service) Projects(ctx context.Context, query domain.Query) ([]domain.ProjectSummary, error) {
 	if err := s.refreshIfNeeded(ctx); err != nil {
 		return nil, err

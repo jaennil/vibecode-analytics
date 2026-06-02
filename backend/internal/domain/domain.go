@@ -44,7 +44,7 @@ type Prompt struct {
 	SessionName string     `json:"sessionName"`
 	Session     string     `json:"session"`
 	File        string     `json:"file"`
-	Text        string     `json:"text"`
+	Text        string     `json:"text,omitempty"`
 	ImageCount  int        `json:"imageCount"`
 	IndexedAt   *time.Time `json:"-"`
 }

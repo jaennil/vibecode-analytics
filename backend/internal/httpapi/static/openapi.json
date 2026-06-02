@@ -137,6 +137,29 @@
         }
       }
     },
+    "/api/v2/prompt": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Get a single prompt",
+        "description": "Returns the full prompt text for a prompt id. Dashboard responses include prompt metadata only.",
+        "parameters": [
+          { "$ref": "#/components/parameters/PromptId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompt with full text",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Prompt" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
     "/api/v2/projects": {
       "get": {
         "tags": ["Telemetry"],
@@ -278,6 +301,13 @@
         "in": "query",
         "description": "Optional session identifier.",
         "schema": { "type": "string" }
+      },
+      "PromptId": {
+        "name": "id",
+        "in": "query",
+        "description": "Prompt identifier.",
+        "required": true,
+        "schema": { "type": "string" }
       }
     },
     "responses": {
@@ -291,6 +321,14 @@
       },
       "InternalError": {
         "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/Error" }
@@ -376,7 +414,7 @@
       },
       "Prompt": {
         "type": "object",
-        "required": ["id", "source", "timestamp", "projectId", "projectName", "projectPath", "sessionId", "sessionName", "session", "file", "text", "imageCount"],
+        "required": ["id", "source", "timestamp", "projectId", "projectName", "projectPath", "sessionId", "sessionName", "session", "file", "imageCount"],
         "properties": {
           "id": { "type": "string" },
           "source": { "$ref": "#/components/schemas/Source" },

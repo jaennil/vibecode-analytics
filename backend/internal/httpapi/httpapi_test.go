@@ -44,6 +44,22 @@ func TestDashboardEndpoint(t *testing.T) {
 			t.Fatalf("missing %q in body=%s", want, rec.Body.String())
 		}
 	}
+	if strings.Contains(rec.Body.String(), "full prompt text") {
+		t.Fatalf("dashboard should not include prompt text: %s", rec.Body.String())
+	}
+}
+
+func TestPromptEndpoint(t *testing.T) {
+	handler := testHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/prompt?id=p1", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"text":"full prompt text"`) {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
 }
 
 func TestInvalidRange(t *testing.T) {
@@ -111,7 +127,7 @@ func TestOpenAPIEndpoint(t *testing.T) {
 	if !json.Valid(rec.Body.Bytes()) {
 		t.Fatalf("invalid JSON body=%s", rec.Body.String())
 	}
-	for _, want := range []string{`"openapi":"3.0.3"`, `"/api/v2/dashboard"`, `"/api/v2/events"`, `"/metrics"`} {
+	for _, want := range []string{`"openapi":"3.0.3"`, `"/api/v2/dashboard"`, `"/api/v2/prompt"`, `"/api/v2/events"`, `"/metrics"`} {
 		if !strings.Contains(strings.ReplaceAll(rec.Body.String(), " ", ""), want) {
 			t.Fatalf("missing %q in body=%s", want, rec.Body.String())
 		}
@@ -165,6 +181,21 @@ func testHandler(t *testing.T) http.Handler {
 		Input:       1,
 		Output:      2,
 		Total:       3,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPrompts(context.Background(), []domain.Prompt{{
+		ID:          "p1",
+		Source:      domain.SourceCodex,
+		Timestamp:   time.Now().UTC(),
+		ProjectID:   "codex:/work/demo",
+		ProjectName: "demo",
+		ProjectPath: "/work/demo",
+		SessionID:   "codex:/work/demo",
+		SessionName: "demo",
+		Session:     "s1",
+		File:        "/tmp/s1.jsonl",
+		Text:        "full prompt text",
 	}}); err != nil {
 		t.Fatal(err)
 	}

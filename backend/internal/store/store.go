@@ -217,9 +217,28 @@ func (s *Store) Events(ctx context.Context, query domain.Query, maxPoints int, h
 }
 
 func (s *Store) Prompts(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int) ([]domain.Prompt, error) {
-	where, args := filterSQL(query, "prompts", maxPoints, historyMaxPoints)
-	rows, err := s.db.QueryContext(ctx, `SELECT id, source, timestamp, project_id, project_name, project_path,
+	return s.prompts(ctx, query, maxPoints, historyMaxPoints, true)
+}
+
+func (s *Store) PromptMetas(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int) ([]domain.Prompt, error) {
+	return s.prompts(ctx, query, maxPoints, historyMaxPoints, false)
+}
+
+func (s *Store) Prompt(ctx context.Context, id string) (domain.Prompt, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, source, timestamp, project_id, project_name, project_path,
 		session_id, session_name, session, file, text, image_count, indexed_at
+		FROM prompts WHERE id = ?`, id)
+	return scanPrompt(row)
+}
+
+func (s *Store) prompts(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int, includeText bool) ([]domain.Prompt, error) {
+	where, args := filterSQL(query, "prompts", maxPoints, historyMaxPoints)
+	textColumn := "''"
+	if includeText {
+		textColumn = "text"
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, source, timestamp, project_id, project_name, project_path,
+		session_id, session_name, session, file, `+textColumn+`, image_count, indexed_at
 		FROM prompts `+where+` ORDER BY timestamp ASC`, args...)
 	if err != nil {
 		return nil, err
@@ -227,18 +246,30 @@ func (s *Store) Prompts(ctx context.Context, query domain.Query, maxPoints int, 
 	defer rows.Close()
 	prompts := make([]domain.Prompt, 0)
 	for rows.Next() {
-		var prompt domain.Prompt
-		var timestamp, indexedAt string
-		if err := rows.Scan(&prompt.ID, &prompt.Source, &timestamp, &prompt.ProjectID, &prompt.ProjectName, &prompt.ProjectPath,
-			&prompt.SessionID, &prompt.SessionName, &prompt.Session, &prompt.File, &prompt.Text, &prompt.ImageCount, &indexedAt); err != nil {
+		prompt, err := scanPrompt(rows)
+		if err != nil {
 			return nil, err
 		}
-		prompt.Timestamp = parseTime(timestamp)
-		idx := parseTime(indexedAt)
-		prompt.IndexedAt = &idx
 		prompts = append(prompts, prompt)
 	}
 	return prompts, rows.Err()
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPrompt(row rowScanner) (domain.Prompt, error) {
+	var prompt domain.Prompt
+	var timestamp, indexedAt string
+	if err := row.Scan(&prompt.ID, &prompt.Source, &timestamp, &prompt.ProjectID, &prompt.ProjectName, &prompt.ProjectPath,
+		&prompt.SessionID, &prompt.SessionName, &prompt.Session, &prompt.File, &prompt.Text, &prompt.ImageCount, &indexedAt); err != nil {
+		return domain.Prompt{}, err
+	}
+	prompt.Timestamp = parseTime(timestamp)
+	idx := parseTime(indexedAt)
+	prompt.IndexedAt = &idx
+	return prompt, nil
 }
 
 func (s *Store) Summary(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int) (domain.Summary, error) {
@@ -246,7 +277,7 @@ func (s *Store) Summary(ctx context.Context, query domain.Query, maxPoints int, 
 	if err != nil {
 		return domain.Summary{}, err
 	}
-	prompts, err := s.Prompts(ctx, query, maxPoints, historyMaxPoints)
+	prompts, err := s.PromptMetas(ctx, query, maxPoints, historyMaxPoints)
 	if err != nil {
 		return domain.Summary{}, err
 	}
@@ -258,7 +289,7 @@ func (s *Store) Dashboard(ctx context.Context, query domain.Query, maxPoints int
 	if err != nil {
 		return domain.Dashboard{}, err
 	}
-	prompts, err := s.Prompts(ctx, query, maxPoints, historyMaxPoints)
+	prompts, err := s.PromptMetas(ctx, query, maxPoints, historyMaxPoints)
 	if err != nil {
 		return domain.Dashboard{}, err
 	}
@@ -299,7 +330,7 @@ func (s *Store) Projects(ctx context.Context, query domain.Query, maxPoints int,
 	if err != nil {
 		return nil, err
 	}
-	prompts, err := s.Prompts(ctx, query, maxPoints, historyMaxPoints)
+	prompts, err := s.PromptMetas(ctx, query, maxPoints, historyMaxPoints)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +374,7 @@ func (s *Store) Sessions(ctx context.Context, query domain.Query, maxPoints int,
 	if err != nil {
 		return nil, err
 	}
-	prompts, err := s.Prompts(ctx, query, maxPoints, historyMaxPoints)
+	prompts, err := s.PromptMetas(ctx, query, maxPoints, historyMaxPoints)
 	if err != nil {
 		return nil, err
 	}

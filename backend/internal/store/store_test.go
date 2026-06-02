@@ -103,6 +103,11 @@ func TestDashboardBuildsViewsFromLoadedData(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.UpsertPrompts(context.Background(), []domain.Prompt{
+		fixturePrompt("p1", "full prompt text", time.Date(2026, 5, 1, 10, 1, 0, 0, time.UTC)),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	dashboard, err := store.Dashboard(context.Background(), domain.Query{Range: "all"}, 260, 1000)
 	if err != nil {
 		t.Fatal(err)
@@ -110,8 +115,18 @@ func TestDashboardBuildsViewsFromLoadedData(t *testing.T) {
 	if len(dashboard.Events) != 2 || len(dashboard.Projects) != 1 || len(dashboard.Sessions) != 1 {
 		t.Fatalf("dashboard=%+v", dashboard)
 	}
+	if len(dashboard.Prompts) != 1 || dashboard.Prompts[0].Text != "" {
+		t.Fatalf("dashboard prompts=%+v, want prompt metadata only", dashboard.Prompts)
+	}
 	if dashboard.Summary.Events != len(dashboard.Events) || dashboard.Summary.Totals.NewTokens != 24 {
 		t.Fatalf("summary=%+v", dashboard.Summary)
+	}
+	prompt, err := store.Prompt(context.Background(), "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt.Text != "full prompt text" {
+		t.Fatalf("prompt=%+v, want full text", prompt)
 	}
 }
 
@@ -159,5 +174,21 @@ func fixtureEvent(id string, ts time.Time) domain.Event {
 		Input:       10,
 		Output:      2,
 		Total:       12,
+	}
+}
+
+func fixturePrompt(id string, text string, ts time.Time) domain.Prompt {
+	return domain.Prompt{
+		ID:          id,
+		Source:      domain.SourceCodex,
+		Timestamp:   ts,
+		ProjectID:   "codex:/work/demo",
+		ProjectName: "demo",
+		ProjectPath: "/work/demo",
+		SessionID:   "codex:/work/demo",
+		SessionName: "demo",
+		Session:     "s1",
+		File:        "/tmp/s1.jsonl",
+		Text:        text,
 	}
 }

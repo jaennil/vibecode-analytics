@@ -1,4 +1,4 @@
-import type { DashboardData, Range, Source } from "./types";
+import type { DashboardData, Prompt, Range, Source } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -11,6 +11,16 @@ export interface Query {
 
 export async function fetchDashboard(query: Query, signal?: AbortSignal): Promise<DashboardData> {
   return get<DashboardData>("/api/v2/dashboard", query, signal);
+}
+
+export async function fetchPrompt(id: string, signal?: AbortSignal): Promise<Prompt> {
+  const url = new URL(`${API_BASE}/api/v2/prompt`, window.location.origin);
+  url.searchParams.set("id", id);
+  const response = await fetch(url, { cache: "no-store", signal });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json() as Promise<Prompt>;
 }
 
 async function get<T>(path: string, query: Query, signal?: AbortSignal): Promise<T> {
