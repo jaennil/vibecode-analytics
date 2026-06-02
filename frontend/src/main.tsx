@@ -98,6 +98,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const projectOptionsData = useMemo(() => filterDashboardData(data, source, "all"), [data, source]);
   const viewData = useMemo(() => filterDashboardData(data, source, projectId), [data, projectId, source]);
+  const initialLoading = loading && !viewData;
 
   useEffect(() => {
     let timer = 0;
@@ -152,8 +153,8 @@ function App() {
         </div>
         <div className="status-card">
           <span className={error ? "status error" : "status ok"}>{error ? "error" : loading ? "refreshing" : "live"}</span>
-          <strong>{viewData?.summary ? new Date(viewData.summary.generatedAt).toLocaleTimeString() : "waiting"}</strong>
-          {error ? <small>{error}</small> : <small>{viewData?.summary.events ?? 0} events indexed</small>}
+          <strong>{viewData?.summary ? new Date(viewData.summary.generatedAt).toLocaleTimeString() : initialLoading ? <SkeletonText className="status-time-skeleton" /> : "waiting"}</strong>
+          {error ? <small>{error}</small> : <small>{viewData?.summary ? `${viewData.summary.events} events indexed` : initialLoading ? <SkeletonText className="status-note-skeleton" /> : "waiting for data"}</small>}
         </div>
       </header>
 
@@ -214,7 +215,7 @@ function App() {
         ))}
       </nav>
 
-      {tab === "dashboard" && <Dashboard data={viewData} />}
+      {tab === "dashboard" && <Dashboard data={viewData} loading={initialLoading} />}
       {tab === "projects" && (
         <Projects
           projects={visibleProjects}
@@ -243,7 +244,8 @@ function App() {
   );
 }
 
-function Dashboard({ data }: { data: DashboardData | null }) {
+function Dashboard({ data, loading }: { data: DashboardData | null; loading: boolean }) {
+  if (loading && !data) return <DashboardSkeleton />;
   const summary = data?.summary;
   return (
     <>
@@ -260,6 +262,37 @@ function Dashboard({ data }: { data: DashboardData | null }) {
       <section className="panel dashboard-global">
         <PanelHead title="All sessions" meta={`${data?.events.length ?? 0} events / ${data?.sessions.length ?? 0} sessions`} />
         <GlobalSessionChart events={data?.events ?? []} prompts={data?.prompts ?? []} />
+      </section>
+    </>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <>
+      <section className="metrics" aria-busy="true" aria-label="loading dashboard metrics">
+        {["Last Turn", "New Tokens", "Output", "Spike"].map((label) => (
+          <MetricSkeleton key={label} label={label} />
+        ))}
+      </section>
+      <section className="panel" aria-busy="true">
+        <PanelHead title="Daily trend" meta={<SkeletonText className="panel-meta-skeleton" />} />
+        <ChartSkeleton />
+      </section>
+      <section className="panel dashboard-global" aria-busy="true">
+        <PanelHead title="All sessions" meta={<SkeletonText className="panel-meta-skeleton wide" />} />
+        <div className="global-chart-toolbar skeleton-toolbar">
+          <SkeletonText />
+          <SkeletonText />
+          <SkeletonText />
+          <SkeletonText />
+        </div>
+        <div className="global-chart-summary">
+          {["Chart unit", "New tokens", "Cache read", "Largest event"].map((label) => (
+            <GlobalSummarySkeleton key={label} label={label} />
+          ))}
+        </div>
+        <ChartSkeleton large />
       </section>
     </>
   );
@@ -1456,6 +1489,16 @@ function Metric({ label, value, note, warn = false }: { label: string; value: st
   );
 }
 
+function MetricSkeleton({ label }: { label: string }) {
+  return (
+    <div className="metric skeleton-card">
+      <span>{label}</span>
+      <SkeletonText className="metric-value-skeleton" />
+      <SkeletonText className="metric-note-skeleton" />
+    </div>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <span>
@@ -1464,13 +1507,36 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function PanelHead({ title, meta }: { title: string; meta: string }) {
+function PanelHead({ title, meta }: { title: string; meta: React.ReactNode }) {
   return (
     <div className="panel-head">
       <h2>{title}</h2>
       <span>{meta}</span>
     </div>
   );
+}
+
+function GlobalSummarySkeleton({ label }: { label: string }) {
+  return (
+    <div className="global-summary-item skeleton-card">
+      <span>{label}</span>
+      <SkeletonText className="summary-value-skeleton" />
+    </div>
+  );
+}
+
+function ChartSkeleton({ large = false }: { large?: boolean }) {
+  return (
+    <div className={large ? "chart-skeleton large" : "chart-skeleton"} aria-hidden="true">
+      <SkeletonText className="chart-skeleton-line top" />
+      <SkeletonText className="chart-skeleton-line middle" />
+      <SkeletonText className="chart-skeleton-line bottom" />
+    </div>
+  );
+}
+
+function SkeletonText({ className = "" }: { className?: string }) {
+  return <span className={`skeleton-text ${className}`.trim()} />;
 }
 
 function Empty({ text }: { text: string }) {

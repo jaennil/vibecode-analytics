@@ -229,6 +229,50 @@ input {
   color: var(--warn);
 }
 
+.skeleton-card {
+  pointer-events: none;
+}
+
+.skeleton-text {
+  display: inline-block;
+  min-width: 72px;
+  height: 0.9em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(63, 89, 84, 0.52), rgba(135, 166, 158, 0.24), rgba(63, 89, 84, 0.52));
+  background-size: 220% 100%;
+  animation: skeleton-pulse 1.25s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+.status-time-skeleton {
+  width: 82px;
+  height: 1em;
+}
+
+.status-note-skeleton {
+  width: 142px;
+}
+
+.metric-value-skeleton {
+  display: block;
+  width: min(78%, 230px);
+  height: clamp(28px, 4vw, 52px);
+  margin: 14px 0 10px;
+  border-radius: 8px;
+}
+
+.metric-note-skeleton {
+  width: 68%;
+}
+
+.panel-meta-skeleton {
+  width: 76px;
+}
+
+.panel-meta-skeleton.wide {
+  width: 150px;
+}
+
 .panel {
   padding: 18px;
 }
@@ -295,6 +339,48 @@ input {
   min-height: 320px;
 }
 
+.chart-skeleton {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(to bottom, transparent 24%, rgba(39, 65, 61, 0.7) 24%, rgba(39, 65, 61, 0.7) calc(24% + 1px), transparent calc(24% + 1px)),
+    linear-gradient(to bottom, transparent 49%, rgba(39, 65, 61, 0.7) 49%, rgba(39, 65, 61, 0.7) calc(49% + 1px), transparent calc(49% + 1px)),
+    linear-gradient(to bottom, transparent 74%, rgba(39, 65, 61, 0.7) 74%, rgba(39, 65, 61, 0.7) calc(74% + 1px), transparent calc(74% + 1px)),
+    rgba(11, 24, 22, 0.42);
+}
+
+.chart-skeleton.large {
+  height: min(58vh, 520px);
+  min-height: 360px;
+}
+
+.chart-skeleton-line {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.chart-skeleton-line.top {
+  top: 28%;
+  left: 7%;
+  width: 36%;
+}
+
+.chart-skeleton-line.middle {
+  top: 48%;
+  left: 18%;
+  width: 66%;
+}
+
+.chart-skeleton-line.bottom {
+  top: 68%;
+  left: 9%;
+  width: 52%;
+}
+
 .dashboard-global {
   margin-top: 14px;
 }
@@ -351,6 +437,29 @@ input {
   font-size: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.summary-value-skeleton {
+  display: block;
+  width: 70%;
+  height: 18px;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+
+.skeleton-toolbar .skeleton-text {
+  width: 180px;
+  height: 36px;
+  border-radius: 12px;
+}
+
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .global-session-chart {
