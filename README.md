@@ -26,6 +26,8 @@ Grafana at `http://127.0.0.1:3000`. Grafana is provisioned with a Prometheus
 datasource and a "Live Token Monitor" dashboard. The default login is
 `admin` / `admin`. The dashboard includes API golden signals for request
 traffic, server error ratio, p95 latency, and in-flight request saturation.
+Endpoint breakdown panels show request traffic and p50, p95, p99, and average
+latency for each API route.
 
 ## Layout
 
