@@ -16,11 +16,22 @@ type Service struct {
 	cfg          config.Config
 	store        *store.Store
 	mu           sync.Mutex
+	fileCache    map[fileCacheKey]fileCacheEntry
 	lastRefresh  time.Time
 	lastFiles    int
 	lastEvents   int
 	lastPrompts  int
 	importedOnce bool
+}
+
+type fileCacheKey struct {
+	source string
+	path   string
+}
+
+type fileCacheEntry struct {
+	modTime time.Time
+	size    int64
 }
 
 type RefreshResult struct {
@@ -56,7 +67,7 @@ type SourceMetrics struct {
 }
 
 func New(cfg config.Config, st *store.Store) *Service {
-	return &Service{cfg: cfg, store: st}
+	return &Service{cfg: cfg, store: st, fileCache: map[fileCacheKey]fileCacheEntry{}}
 }
 
 func (s *Service) Health() Health {
@@ -99,10 +110,15 @@ func (s *Service) refreshLocked(ctx context.Context) (RefreshResult, error) {
 	}
 	events := make([]domain.Event, 0)
 	prompts := make([]domain.Prompt, 0)
+	changed := make(map[fileCacheKey]fileCacheEntry)
 	fileCount := 0
 	for source, files := range filesBySource {
 		for _, file := range files {
 			fileCount++
+			key := fileCacheKey{source: source, path: file.Path}
+			if entry, ok := s.fileCache[key]; ok && entry.size == file.Size && entry.modTime.Equal(file.ModTime) {
+				continue
+			}
 			text, err := discovery.ReadTail(file.Path, s.cfg.MaxTailBytes)
 			if err != nil {
 				continue
@@ -110,6 +126,7 @@ func (s *Service) refreshLocked(ctx context.Context) (RefreshResult, error) {
 			parsed := parser.ParseSession(source, file.Path, file.ModTime, file.Size, text)
 			events = append(events, parsed.Events...)
 			prompts = append(prompts, parsed.Prompts...)
+			changed[key] = fileCacheEntry{modTime: file.ModTime, size: file.Size}
 		}
 	}
 	if err := s.store.UpsertEvents(ctx, events); err != nil {
@@ -117,6 +134,9 @@ func (s *Service) refreshLocked(ctx context.Context) (RefreshResult, error) {
 	}
 	if err := s.store.UpsertPrompts(ctx, prompts); err != nil {
 		return result, err
+	}
+	for key, entry := range changed {
+		s.fileCache[key] = entry
 	}
 
 	result.Files = fileCount
