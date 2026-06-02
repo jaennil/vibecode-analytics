@@ -46,6 +46,31 @@
         }
       }
     },
+    "/api/v2/dashboard": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Get dashboard data",
+        "description": "Returns events, prompts, summary, project summaries, and session summaries from one database read.",
+        "parameters": [
+          { "$ref": "#/components/parameters/Range" },
+          { "$ref": "#/components/parameters/Source" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered dashboard data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Dashboard" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
     "/api/v2/events": {
       "get": {
         "tags": ["Telemetry"],
@@ -429,6 +454,29 @@
           "daily": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/DailyTotal" }
+          }
+        }
+      },
+      "Dashboard": {
+        "type": "object",
+        "required": ["summary", "events", "prompts", "projects", "sessions"],
+        "properties": {
+          "summary": { "$ref": "#/components/schemas/Summary" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Event" }
+          },
+          "prompts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Prompt" }
+          },
+          "projects": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProjectSummary" }
+          },
+          "sessions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SessionSummary" }
           }
         }
       },

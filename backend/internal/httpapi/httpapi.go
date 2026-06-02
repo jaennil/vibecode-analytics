@@ -43,6 +43,7 @@ func New(svc *service.Service, corsOrigins []string) http.Handler {
 	mux.HandleFunc("/api/v2/projects", api.handleProjects)
 	mux.HandleFunc("/api/v2/sessions", api.handleSessions)
 	mux.HandleFunc("/api/v2/summary", api.handleSummary)
+	mux.HandleFunc("/api/v2/dashboard", api.handleDashboard)
 	return api.cors(api.observe(mux))
 }
 
@@ -200,6 +201,22 @@ func (a *API) handleSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (a *API) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+	query, ok := parseQuery(w, r)
+	if !ok {
+		return
+	}
+	dashboard, err := a.service.Dashboard(r.Context(), query)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dashboard)
 }
 
 func parseQuery(w http.ResponseWriter, r *http.Request) (domain.Query, bool) {
@@ -423,7 +440,7 @@ func (m *httpMetrics) prometheusText() string {
 
 func routeLabel(path string) string {
 	switch path {
-	case "/api/v2/health", "/api/v2/refresh", "/api/v2/events", "/api/v2/prompts", "/api/v2/projects", "/api/v2/sessions", "/api/v2/summary":
+	case "/api/v2/health", "/api/v2/refresh", "/api/v2/events", "/api/v2/prompts", "/api/v2/projects", "/api/v2/sessions", "/api/v2/summary", "/api/v2/dashboard":
 		return path
 	default:
 		return "unknown"

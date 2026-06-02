@@ -1,4 +1,4 @@
-import type { DashboardData, Prompt, ProjectSummary, Range, SessionSummary, Source, Summary, TokenEvent } from "./types";
+import type { DashboardData, Range, Source } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -10,21 +10,7 @@ export interface Query {
 }
 
 export async function fetchDashboard(query: Query, signal?: AbortSignal): Promise<DashboardData> {
-  const [summary, events, prompts, projects, sessions] = await Promise.all([
-    get<Summary>("/api/v2/summary", query, signal),
-    get<{ events: TokenEvent[] }>("/api/v2/events", query, signal),
-    get<{ prompts: Prompt[] }>("/api/v2/prompts", query, signal),
-    get<{ projects: ProjectSummary[] }>("/api/v2/projects", query, signal),
-    get<{ sessions: SessionSummary[] }>("/api/v2/sessions", query, signal),
-  ]);
-
-  return {
-    summary,
-    events: events.events,
-    prompts: prompts.prompts,
-    projects: projects.projects,
-    sessions: sessions.sessions,
-  };
+  return get<DashboardData>("/api/v2/dashboard", query, signal);
 }
 
 async function get<T>(path: string, query: Query, signal?: AbortSignal): Promise<T> {

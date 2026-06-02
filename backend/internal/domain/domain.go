@@ -83,6 +83,14 @@ type Summary struct {
 	Daily       []DailyTotal `json:"daily"`
 }
 
+type Dashboard struct {
+	Summary  Summary          `json:"summary"`
+	Events   []Event          `json:"events"`
+	Prompts  []Prompt         `json:"prompts"`
+	Projects []ProjectSummary `json:"projects"`
+	Sessions []SessionSummary `json:"sessions"`
+}
+
 type TokenTotals struct {
 	NewTokens   int64 `json:"newTokens"`
 	Input       int64 `json:"input"`

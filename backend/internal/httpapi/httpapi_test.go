@@ -31,6 +31,21 @@ func TestEventsEndpoint(t *testing.T) {
 	}
 }
 
+func TestDashboardEndpoint(t *testing.T) {
+	handler := testHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/dashboard?range=all", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"summary"`, `"events"`, `"prompts"`, `"projects"`, `"sessions"`, `"projectName":"demo"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("missing %q in body=%s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestInvalidRange(t *testing.T) {
 	handler := testHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/events?range=bad", nil)
@@ -96,7 +111,7 @@ func TestOpenAPIEndpoint(t *testing.T) {
 	if !json.Valid(rec.Body.Bytes()) {
 		t.Fatalf("invalid JSON body=%s", rec.Body.String())
 	}
-	for _, want := range []string{`"openapi":"3.0.3"`, `"/api/v2/events"`, `"/metrics"`} {
+	for _, want := range []string{`"openapi":"3.0.3"`, `"/api/v2/dashboard"`, `"/api/v2/events"`, `"/metrics"`} {
 		if !strings.Contains(strings.ReplaceAll(rec.Body.String(), " ", ""), want) {
 			t.Fatalf("missing %q in body=%s", want, rec.Body.String())
 		}

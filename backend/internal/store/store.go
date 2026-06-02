@@ -250,6 +250,28 @@ func (s *Store) Summary(ctx context.Context, query domain.Query, maxPoints int, 
 	if err != nil {
 		return domain.Summary{}, err
 	}
+	return summaryFrom(query, events, prompts), nil
+}
+
+func (s *Store) Dashboard(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int) (domain.Dashboard, error) {
+	events, err := s.Events(ctx, query, maxPoints, historyMaxPoints)
+	if err != nil {
+		return domain.Dashboard{}, err
+	}
+	prompts, err := s.Prompts(ctx, query, maxPoints, historyMaxPoints)
+	if err != nil {
+		return domain.Dashboard{}, err
+	}
+	return domain.Dashboard{
+		Summary:  summaryFrom(query, events, prompts),
+		Events:   events,
+		Prompts:  prompts,
+		Projects: projectsFrom(events, prompts),
+		Sessions: sessionsFrom(events, prompts),
+	}, nil
+}
+
+func summaryFrom(query domain.Query, events []domain.Event, prompts []domain.Prompt) domain.Summary {
 	summary := domain.Summary{
 		GeneratedAt: time.Now().UTC(),
 		Range:       defaultRange(query.Range),
@@ -269,7 +291,7 @@ func (s *Store) Summary(ctx context.Context, query domain.Query, maxPoints int, 
 			summary.Spike = &copy
 		}
 	}
-	return summary, nil
+	return summary
 }
 
 func (s *Store) Projects(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int) ([]domain.ProjectSummary, error) {
@@ -281,6 +303,10 @@ func (s *Store) Projects(ctx context.Context, query domain.Query, maxPoints int,
 	if err != nil {
 		return nil, err
 	}
+	return projectsFrom(events, prompts), nil
+}
+
+func projectsFrom(events []domain.Event, prompts []domain.Prompt) []domain.ProjectSummary {
 	byID := map[string]*domain.ProjectSummary{}
 	for _, event := range events {
 		row := byID[event.ProjectID]
@@ -309,7 +335,7 @@ func (s *Store) Projects(ctx context.Context, query domain.Query, maxPoints int,
 		out = append(out, *row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].LatestTime.After(out[j].LatestTime) })
-	return out, nil
+	return out
 }
 
 func (s *Store) Sessions(ctx context.Context, query domain.Query, maxPoints int, historyMaxPoints int) ([]domain.SessionSummary, error) {
@@ -321,6 +347,10 @@ func (s *Store) Sessions(ctx context.Context, query domain.Query, maxPoints int,
 	if err != nil {
 		return nil, err
 	}
+	return sessionsFrom(events, prompts), nil
+}
+
+func sessionsFrom(events []domain.Event, prompts []domain.Prompt) []domain.SessionSummary {
 	byID := map[string]*domain.SessionSummary{}
 	for _, event := range events {
 		row := byID[event.SessionID]
@@ -356,7 +386,7 @@ func (s *Store) Sessions(ctx context.Context, query domain.Query, maxPoints int,
 		out = append(out, *row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].LatestTime.After(out[j].LatestTime) })
-	return out, nil
+	return out
 }
 
 func (s *Store) ImportHistoryJSONL(ctx context.Context, path string) (int, int, error) {

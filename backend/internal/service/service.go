@@ -164,6 +164,13 @@ func (s *Service) Summary(ctx context.Context, query domain.Query) (domain.Summa
 	return s.store.Summary(ctx, query, s.cfg.MaxPoints, s.cfg.HistoryMaxPoints)
 }
 
+func (s *Service) Dashboard(ctx context.Context, query domain.Query) (domain.Dashboard, error) {
+	if err := s.refreshIfNeeded(ctx); err != nil {
+		return domain.Dashboard{}, err
+	}
+	return s.store.Dashboard(ctx, query, s.cfg.MaxPoints, s.cfg.HistoryMaxPoints)
+}
+
 func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 	if err := s.refreshIfNeeded(ctx); err != nil {
 		return Metrics{}, err

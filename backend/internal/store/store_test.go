@@ -95,6 +95,26 @@ func TestSummaryComputesTotals(t *testing.T) {
 	}
 }
 
+func TestDashboardBuildsViewsFromLoadedData(t *testing.T) {
+	store := testStore(t)
+	if err := store.UpsertEvents(context.Background(), []domain.Event{
+		fixtureEvent("e1", time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)),
+		fixtureEvent("e2", time.Date(2026, 5, 1, 11, 0, 0, 0, time.UTC)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dashboard, err := store.Dashboard(context.Background(), domain.Query{Range: "all"}, 260, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.Events) != 2 || len(dashboard.Projects) != 1 || len(dashboard.Sessions) != 1 {
+		t.Fatalf("dashboard=%+v", dashboard)
+	}
+	if dashboard.Summary.Events != len(dashboard.Events) || dashboard.Summary.Totals.NewTokens != 24 {
+		t.Fatalf("summary=%+v", dashboard.Summary)
+	}
+}
+
 func TestQueriesFilterBySource(t *testing.T) {
 	store := testStore(t)
 	codex := fixtureEvent("codex-e1", time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC))

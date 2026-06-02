@@ -63,6 +63,7 @@ transmit prompts, paths, tokens, or logs externally.
 
 - `GET /api/v2/health`
 - `POST /api/v2/refresh`
+- `GET /api/v2/dashboard?range=24h|7d|30d|all|live&source=all|codex|claude`
 - `GET /api/v2/events?range=24h|7d|30d|all|live&source=all|codex|claude`
 - `GET /api/v2/prompts?range=...`
 - `GET /api/v2/projects?range=...`
@@ -72,7 +73,7 @@ transmit prompts, paths, tokens, or logs externally.
 - `GET /swagger/`
 - `GET /openapi.json`
 
-All list endpoints also accept `projectId` and `sessionId`.
+All telemetry endpoints also accept `projectId` and `sessionId`.
 
 ## Storage
 
