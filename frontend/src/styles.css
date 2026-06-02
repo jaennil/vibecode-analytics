@@ -443,25 +443,38 @@ input {
 
 .series-toggle {
   display: flex;
-  grid-template-columns: none;
   gap: 6px;
   align-items: center;
   min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 11px;
   letter-spacing: 0;
   text-transform: none;
 }
 
-.series-toggle input {
-  width: 14px;
-  min-height: auto;
-  margin: 0;
+.series-toggle:hover,
+.series-toggle.active {
+  border-color: transparent;
+  color: var(--text);
+}
+
+.series-toggle:not(.active) {
+  opacity: 0.46;
+}
+
+.series-toggle:not(.active) span {
+  text-decoration: line-through;
 }
 
 .series-toggle i {
+  display: block;
   width: 10px;
   height: 10px;
+  flex: 0 0 auto;
   border-radius: 2px;
 }
 

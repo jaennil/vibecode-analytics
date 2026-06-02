@@ -505,6 +505,13 @@ function SessionDetailChart({
   useEffect(() => () => disposeChart(chartRef), []);
 
   const resetZoom = () => chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
+  const focusSeries = (seriesName: string) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.dispatchAction({ type: "downplay" });
+    chart.dispatchAction({ type: "highlight", seriesName });
+  };
+  const clearSeriesFocus = () => chartRef.current?.dispatchAction({ type: "downplay" });
   return (
     <section className="detail-chart-region">
       <div className="detail-toolbar">
@@ -547,21 +554,34 @@ function SessionDetailChart({
         )}
         <div className="series-toggles" aria-label="token series">
           {detailSeries.map((series) => (
-            <label className="series-toggle" key={series.key}>
-              <input
-                type="checkbox"
-                checked={enabled[series.key]}
-                onChange={() => setEnabled((current) => ({ ...current, [series.key]: !current[series.key] }))}
-              />
+            <button
+              type="button"
+              className={enabled[series.key] ? "series-toggle active" : "series-toggle"}
+              aria-pressed={enabled[series.key]}
+              key={series.key}
+              onClick={() => setEnabled((current) => ({ ...current, [series.key]: !current[series.key] }))}
+              onMouseEnter={() => focusSeries(series.label)}
+              onMouseLeave={clearSeriesFocus}
+              onFocus={() => focusSeries(series.label)}
+              onBlur={clearSeriesFocus}
+            >
               <i style={{ background: series.color }} />
               <span>{series.label}</span>
-            </label>
+            </button>
           ))}
-          <label className="series-toggle">
-            <input type="checkbox" checked={showCacheRead} onChange={() => setShowCacheRead((current) => !current)} />
+          <button
+            type="button"
+            className={showCacheRead ? "series-toggle active" : "series-toggle"}
+            aria-pressed={showCacheRead}
+            onClick={() => setShowCacheRead((current) => !current)}
+            onMouseEnter={() => focusSeries("Cache read")}
+            onMouseLeave={clearSeriesFocus}
+            onFocus={() => focusSeries("Cache read")}
+            onBlur={clearSeriesFocus}
+          >
             <i className="cache-swatch" />
             <span>Cache read</span>
-          </label>
+          </button>
         </div>
         <div className="detail-chart-actions">
           <div className="segmented" aria-label="chart mode">
