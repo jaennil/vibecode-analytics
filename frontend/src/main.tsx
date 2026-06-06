@@ -484,9 +484,9 @@ type DetailSeriesKey = "input" | "cacheCreate" | "output" | "reasoning";
 
 const detailSeries: Array<{ key: DetailSeriesKey; label: string; color: string }> = [
   { key: "input", label: "Fresh input", color: "#69b7ff" },
-  { key: "cacheCreate", label: "Cache write", color: "#9b8cff" },
-  { key: "output", label: "Output", color: "#ffcc66" },
-  { key: "reasoning", label: "Reasoning", color: "#df88ff" },
+  { key: "cacheCreate", label: "Cache write", color: "#8b5cf6" },
+  { key: "output", label: "Output", color: "#f59e0b" },
+  { key: "reasoning", label: "Reasoning", color: "#ec4899" },
 ];
 
 function SessionDetailChart({
@@ -863,19 +863,19 @@ function DailyChart({ data }: { data: Array<{ day: string; total: number; averag
       grid: { top: 20, right: 58, bottom: 36, left: 64 },
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#132024",
-        borderColor: "#39525a",
-        textStyle: { color: "#edf6f2" },
+        backgroundColor: "#111827",
+        borderColor: "#374151",
+        textStyle: { color: "#e5e7eb" },
         valueFormatter: (value) => formatAverage(Number(value)),
       },
-      xAxis: { type: "category", data: data.map((item) => item.day), axisLabel: { color: "#9bb2ad" } },
+      xAxis: { type: "category", data: data.map((item) => item.day), axisLabel: { color: "#8b93a1" } },
       yAxis: [
-        { type: "value", axisLabel: { color: "#9bb2ad", formatter: formatNumber }, splitLine: { lineStyle: { color: "#26393d" } } },
-        { type: "value", axisLabel: { color: "#9bb2ad", formatter: (value: number) => formatAverage(value) }, splitLine: { show: false } },
+        { type: "value", axisLabel: { color: "#8b93a1", formatter: formatNumber }, splitLine: { lineStyle: { color: "#252b37" } } },
+        { type: "value", axisLabel: { color: "#8b93a1", formatter: (value: number) => formatAverage(value) }, splitLine: { show: false } },
       ],
       series: [
-        { type: "bar", name: "Daily total", data: data.map((item) => item.total), itemStyle: { color: "#73d99f", borderRadius: [6, 6, 0, 0] } },
-        { type: "line", name: "Average", yAxisIndex: 1, data: data.map((item) => item.average), lineStyle: { color: "#ffcc66", width: 2 } },
+        { type: "bar", name: "Daily total", data: data.map((item) => item.total), itemStyle: { color: "#3b82f6", borderRadius: [6, 6, 0, 0] } },
+        { type: "line", name: "Average", yAxisIndex: 1, data: data.map((item) => item.average), lineStyle: { color: "#f59e0b", width: 2 } },
       ],
     } satisfies EChartsOption);
   }, [data]);
@@ -1032,10 +1032,10 @@ function tokenOption(events: TokenEvent[], prompts: Prompt[], large: boolean, br
   const visible = large ? events : events.slice(-80);
   const series: EChartsOption["series"] = breakdown
     ? [
-        line("New tokens", visible.map((event) => [event.timestamp, newTokens(event)]), "#76d99f", 2.4),
+        line("New tokens", visible.map((event) => [event.timestamp, newTokens(event)]), "#3b82f6", 2.4),
         line("Fresh input", visible.map((event) => [event.timestamp, event.input]), "#69b7ff"),
         line("Cache write", visible.map((event) => [event.timestamp, event.cacheCreate]), "#8aa2ff"),
-        line("Output", visible.map((event) => [event.timestamp, event.output]), "#ffcc66"),
+        line("Output", visible.map((event) => [event.timestamp, event.output]), "#f59e0b"),
         line("Reasoning", visible.map((event) => [event.timestamp, event.reasoning]), "#d987ff"),
       ]
     : [line("New tokens", visible.map((event) => [event.timestamp, newTokens(event)]), visible.at(-1)?.source === "claude" ? "#ffb86c" : "#7cc8ff", 2.3)];
@@ -1053,18 +1053,18 @@ function tokenOption(events: TokenEvent[], prompts: Prompt[], large: boolean, br
     animation: false,
     grid: large ? { top: breakdown ? 48 : 22, right: 28, bottom: 54, left: 62 } : { top: 10, right: 10, bottom: 18, left: 10 },
     legend: { show: breakdown, textStyle: { color: "#a9bbb7" } },
-    tooltip: { trigger: "axis", backgroundColor: "#132024", borderColor: "#39525a", textStyle: { color: "#edf6f2" } },
-    xAxis: { type: "time", axisLabel: { show: large, color: "#9bb2ad" }, axisLine: { lineStyle: { color: "#26393d" } } },
-    yAxis: { type: "value", axisLabel: { show: large, color: "#9bb2ad", formatter: formatNumber }, splitLine: { lineStyle: { color: "#26393d" } } },
+    tooltip: { trigger: "axis", backgroundColor: "#111827", borderColor: "#374151", textStyle: { color: "#e5e7eb" } },
+    xAxis: { type: "time", axisLabel: { show: large, color: "#8b93a1" }, axisLine: { lineStyle: { color: "#252b37" } } },
+    yAxis: { type: "value", axisLabel: { show: large, color: "#8b93a1", formatter: formatNumber }, splitLine: { lineStyle: { color: "#252b37" } } },
     dataZoom: large ? [{ type: "inside" }, { type: "slider", height: 18, bottom: 8 }] : [],
     series,
   };
 }
 
 const globalBreakdown = [
-  { key: "input", name: "Fresh input", color: "#76d99f" },
+  { key: "input", name: "Fresh input", color: "#3b82f6" },
   { key: "cacheCreate", name: "Cache write", color: "#8aa2ff" },
-  { key: "output", name: "Output", color: "#ffcc66" },
+  { key: "output", name: "Output", color: "#f59e0b" },
   { key: "reasoning", name: "Reasoning", color: "#d987ff" },
 ] as const;
 
@@ -1098,9 +1098,9 @@ function globalSessionOption(events: TokenEvent[], prompts: Prompt[], mode: Glob
           symbol: "circle",
           symbolSize: 6,
           smooth: false,
-          lineStyle: { color: "#76d99f", width: 2.5 },
-          itemStyle: { color: "#76d99f" },
-          areaStyle: { color: "#76d99f1f" },
+          lineStyle: { color: "#3b82f6", width: 2.5 },
+          itemStyle: { color: "#3b82f6" },
+          areaStyle: { color: "#3b82f61f" },
         },
       ];
     }
@@ -1150,16 +1150,16 @@ function globalSessionOption(events: TokenEvent[], prompts: Prompt[], mode: Glob
           min: 1,
           logBase: 10,
           name: globalModeLabel(mode),
-          nameTextStyle: { color: "#9bb2ad" },
-          axisLabel: { color: "#9bb2ad", formatter: formatNumber },
-          splitLine: { lineStyle: { color: "#26393d" } },
+          nameTextStyle: { color: "#8b93a1" },
+          axisLabel: { color: "#8b93a1", formatter: formatNumber },
+          splitLine: { lineStyle: { color: "#252b37" } },
         }
       : {
           type: "value" as const,
           name: globalModeLabel(mode),
-          nameTextStyle: { color: "#9bb2ad" },
-          axisLabel: { color: "#9bb2ad", formatter: formatNumber },
-          splitLine: { lineStyle: { color: "#26393d" } },
+          nameTextStyle: { color: "#8b93a1" },
+          axisLabel: { color: "#8b93a1", formatter: formatNumber },
+          splitLine: { lineStyle: { color: "#252b37" } },
         };
 
   return {
@@ -1221,16 +1221,16 @@ function sessionDetailOption(
   const yAxis = [
     {
       type: "value" as const,
-      axisLabel: { color: "#9bb2ad", formatter: formatNumber },
-      splitLine: { lineStyle: { color: "#26393d" } },
+      axisLabel: { color: "#8b93a1", formatter: formatNumber },
+      splitLine: { lineStyle: { color: "#252b37" } },
     },
     ...(showCacheRead
       ? [
           {
             type: "value" as const,
             gridIndex: cacheAxis,
-            axisLabel: { color: "#9bb2ad", formatter: formatNumber },
-            splitLine: { lineStyle: { color: "#26393d" } },
+            axisLabel: { color: "#8b93a1", formatter: formatNumber },
+            splitLine: { lineStyle: { color: "#252b37" } },
           },
         ]
       : []),
@@ -1254,21 +1254,21 @@ function sessionDetailOption(
       showSymbol: events.length < 80,
       symbol: "circle",
       symbolSize: 6,
-      lineStyle: { color: "#76d99f", width: 2.5 },
-      itemStyle: { color: "#76d99f" },
-      areaStyle: { color: "#76d99f22" },
+      lineStyle: { color: "#3b82f6", width: 2.5 },
+      itemStyle: { color: "#3b82f6" },
+      areaStyle: { color: "#3b82f622" },
       emphasis: { focus: "series" },
       markPoint: {
         symbol: "circle",
         symbolSize: 10,
         label: { show: false },
-        itemStyle: { color: "#ff766f", borderColor: "#08110f", borderWidth: 2 },
+        itemStyle: { color: "#ef4444", borderColor: "#080b10", borderWidth: 2 },
         data: [{ type: "max", name: "Spike" }],
       },
       markLine: {
         silent: true,
         symbol: "none",
-        label: { color: "#9bb2ad", formatter: `avg ${formatNumber(average)}`, position: "insideEndTop" },
+        label: { color: "#8b93a1", formatter: `avg ${formatNumber(average)}`, position: "insideEndTop" },
         lineStyle: { color: "#80919a", type: "dashed", width: 1 },
         data: [{ yAxis: average }],
       },
@@ -1297,8 +1297,8 @@ function sessionDetailOption(
       yAxisIndex: cacheAxis,
       data: detailPoints(events, "cacheRead", mode),
       symbol: "none",
-      lineStyle: { color: "#43d4c3", width: 1.8 },
-      areaStyle: { color: "#43d4c322" },
+      lineStyle: { color: "#06b6d4", width: 1.8 },
+      areaStyle: { color: "#06b6d422" },
     });
   }
   series.push({
@@ -1340,7 +1340,7 @@ function sessionDetailOption(
       symbolSize: 13,
       silent: true,
       tooltip: { show: false },
-      itemStyle: { color: "#ffffff", borderColor: "#08110f", borderWidth: 3 },
+      itemStyle: { color: "#ffffff", borderColor: "#080b10", borderWidth: 3 },
       z: 8,
     });
   }
@@ -1362,9 +1362,9 @@ function sessionDetailOption(
       trigger: "axis",
       confine: true,
       axisPointer: { type: "line" },
-      backgroundColor: "#132024",
-      borderColor: "#39525a",
-      textStyle: { color: "#edf6f2" },
+      backgroundColor: "#111827",
+      borderColor: "#374151",
+      textStyle: { color: "#e5e7eb" },
       formatter: (params: unknown) => detailTooltip(params, events, prompts),
     },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
@@ -1382,8 +1382,8 @@ function detailTimeAxis(gridIndex: number, showLabels: boolean) {
   return {
     type: "time" as const,
     gridIndex,
-    axisLabel: { show: showLabels, color: "#9bb2ad" },
-    axisLine: { lineStyle: { color: "#26393d" } },
+    axisLabel: { show: showLabels, color: "#8b93a1" },
+    axisLine: { lineStyle: { color: "#252b37" } },
     axisTick: { show: showLabels },
   };
 }
