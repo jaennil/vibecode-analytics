@@ -39,6 +39,33 @@ const sources: Source[] = ["all", "codex", "claude"];
 const globalModes: GlobalChartMode[] = ["line", "breakdown", "new", "total", "cacheRead"];
 const scaleModes: GlobalScaleMode[] = ["linear", "log"];
 const detailModes: DetailMode[] = ["line", "breakdown", "cumulative"];
+const globalPromptLimitOptions = [
+  { value: 0, label: "All" },
+  { value: 1, label: "1" },
+  { value: 2, label: "2" },
+  { value: 5, label: "5" },
+  { value: 10, label: "10" },
+  { value: 25, label: "25" },
+  { value: 50, label: "50" },
+];
+const globalMinuteOptions = [
+  { value: 0, label: "All" },
+  { value: 15, label: "15m" },
+  { value: 30, label: "30m" },
+  { value: 60, label: "1h" },
+  { value: 180, label: "3h" },
+];
+const globalViewOptions: Array<{ value: GlobalChartMode; label: string }> = [
+  { value: "line", label: "Line" },
+  { value: "new", label: "Bars" },
+  { value: "breakdown", label: "Breakdown" },
+  { value: "total", label: "Total" },
+  { value: "cacheRead", label: "Cache" },
+];
+const globalScaleOptions: Array<{ value: GlobalScaleMode; label: string }> = [
+  { value: "linear", label: "Linear" },
+  { value: "log", label: "Log" },
+];
 
 function useStoredState<T>(key: string, initial: T, validate?: (value: unknown) => value is T): [T, React.Dispatch<React.SetStateAction<T>>] {
   const [value, setValue] = useState<T>(() => {
@@ -99,6 +126,12 @@ function App() {
   const projectOptionsData = useMemo(() => filterDashboardData(data, source, "all"), [data, source]);
   const viewData = useMemo(() => filterDashboardData(data, source, projectId), [data, projectId, source]);
   const initialLoading = loading && !viewData;
+  const projectOptions = useMemo(() => {
+    const projects = projectOptionsData?.projects ?? [];
+    const filtered = filterProjects(projects, search);
+    const selected = projects.find((project) => project.id === projectId);
+    return selected && !filtered.some((project) => project.id === selected.id) ? [selected, ...filtered] : filtered;
+  }, [projectId, projectOptionsData?.projects, search]);
 
   useEffect(() => {
     let timer = 0;
@@ -142,6 +175,11 @@ function App() {
         : [],
     [detailTarget, viewData?.prompts],
   );
+  const visibleTabs: Tab[] = detailTarget ? ["dashboard", "projects", "sessions", "detail", "raw"] : ["dashboard", "projects", "sessions", "raw"];
+
+  useEffect(() => {
+    if (tab === "detail" && !detailTarget) setTab("dashboard");
+  }, [detailTarget, tab]);
 
   return (
     <main className="shell">
@@ -194,7 +232,7 @@ function App() {
             }}
           >
             <option value="all">All projects</option>
-            {(projectOptionsData?.projects ?? []).map((project) => (
+            {projectOptions.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.source} / {project.name}
               </option>
@@ -208,7 +246,7 @@ function App() {
       </section>
 
       <nav className="tabs" aria-label="views">
-        {(["dashboard", "projects", "sessions", "detail", "raw"] as Tab[]).map((item) => (
+        {visibleTabs.map((item) => (
           <button key={item} className={tab === item ? "active" : ""} type="button" onClick={() => setTab(item)}>
             {item}
           </button>
@@ -255,13 +293,13 @@ function Dashboard({ data, loading }: { data: DashboardData | null; loading: boo
         <Metric label="Output" value={formatNumber(summary?.latest?.output ?? 0)} note="assistant answer tokens" />
         <Metric label="Spike" value={formatNumber(newTokens(summary?.spike))} note={summary?.spike ? `${summary.spike.source} / ${summary.spike.projectName}` : "max turn"} warn />
       </section>
-      <section className="panel">
-        <PanelHead title="Daily trend" meta={`${summary?.daily.length ?? 0} days`} />
-        <DailyChart data={summary?.daily ?? []} />
-      </section>
       <section className="panel dashboard-global">
         <PanelHead title="All sessions" meta={`${data?.events.length ?? 0} events / ${data?.sessions.length ?? 0} sessions`} />
         <GlobalSessionChart events={data?.events ?? []} prompts={data?.prompts ?? []} />
+      </section>
+      <section className="panel dashboard-daily">
+        <PanelHead title="Daily trend" meta={`${summary?.daily.length ?? 0} days`} />
+        <DailyChart data={summary?.daily ?? []} />
       </section>
     </>
   );
@@ -274,10 +312,6 @@ function DashboardSkeleton() {
         {["Last Turn", "New Tokens", "Output", "Spike"].map((label) => (
           <MetricSkeleton key={label} label={label} />
         ))}
-      </section>
-      <section className="panel" aria-busy="true">
-        <PanelHead title="Daily trend" meta={<SkeletonText className="panel-meta-skeleton" />} />
-        <ChartSkeleton />
       </section>
       <section className="panel dashboard-global" aria-busy="true">
         <PanelHead title="All sessions" meta={<SkeletonText className="panel-meta-skeleton wide" />} />
@@ -293,6 +327,10 @@ function DashboardSkeleton() {
           ))}
         </div>
         <ChartSkeleton large />
+      </section>
+      <section className="panel dashboard-daily" aria-busy="true">
+        <PanelHead title="Daily trend" meta={<SkeletonText className="panel-meta-skeleton" />} />
+        <ChartSkeleton />
       </section>
     </>
   );
@@ -488,6 +526,12 @@ const detailSeries: Array<{ key: DetailSeriesKey; label: string; color: string }
   { key: "output", label: "Output", color: "#f59e0b" },
   { key: "reasoning", label: "Reasoning", color: "#ec4899" },
 ];
+const defaultDetailSeries: Record<DetailSeriesKey, boolean> = {
+  input: true,
+  cacheCreate: true,
+  output: true,
+  reasoning: true,
+};
 
 function SessionDetailChart({
   events,
@@ -524,12 +568,7 @@ function SessionDetailChart({
   const [showCacheRead, setShowCacheRead] = useStoredState("detail.showCacheRead", false, booleanValue);
   const [enabled, setEnabled] = useStoredState<Record<DetailSeriesKey, boolean>>(
     "detail.series",
-    {
-      input: true,
-      cacheCreate: true,
-      output: true,
-      reasoning: true,
-    },
+    defaultDetailSeries,
     detailSeriesState,
   );
 
@@ -559,6 +598,10 @@ function SessionDetailChart({
   useEffect(() => () => disposeChart(chartRef), []);
 
   const resetZoom = () => chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
+  const resetSeries = () => {
+    setEnabled(defaultDetailSeries);
+    setShowCacheRead(false);
+  };
   const focusSeries = (seriesName: string) => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -651,6 +694,9 @@ function SessionDetailChart({
           </div>
           <button type="button" className="quiet-button" onClick={resetZoom}>
             Reset zoom
+          </button>
+          <button type="button" className="quiet-button" onClick={resetSeries}>
+            Reset series
           </button>
         </div>
       </div>
@@ -918,45 +964,10 @@ function GlobalSessionChart({ events, prompts }: { events: TokenEvent[]; prompts
   return (
     <>
       <div className="global-chart-toolbar">
-        <label>
-          <span>Last prompts</span>
-          <select value={promptLimit} onChange={(event) => setPromptLimit(Number(event.target.value))}>
-            <option value={0}>All prompts</option>
-            <option value={1}>Last prompt</option>
-            <option value={2}>Last 2 prompts</option>
-            <option value={5}>Last 5 prompts</option>
-            <option value={10}>Last 10 prompts</option>
-            <option value={25}>Last 25 prompts</option>
-            <option value={50}>Last 50 prompts</option>
-          </select>
-        </label>
-        <label>
-          <span>Last minutes</span>
-          <select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))}>
-            <option value={0}>All loaded time</option>
-            <option value={15}>Last 15 minutes</option>
-            <option value={30}>Last 30 minutes</option>
-            <option value={60}>Last 60 minutes</option>
-            <option value={180}>Last 180 minutes</option>
-          </select>
-        </label>
-        <label>
-          <span>View</span>
-          <select value={mode} onChange={(event) => setMode(event.target.value as GlobalChartMode)}>
-            <option value="line">New tokens line</option>
-            <option value="new">New token bars</option>
-            <option value="breakdown">Token breakdown bars</option>
-            <option value="total">Total incl. cache read</option>
-            <option value="cacheRead">Cache read only</option>
-          </select>
-        </label>
-        <label>
-          <span>Scale</span>
-          <select value={scale} onChange={(event) => setScale(event.target.value as GlobalScaleMode)}>
-            <option value="linear">Linear scale</option>
-            <option value="log">Log scale</option>
-          </select>
-        </label>
+        <ChipGroup label="Prompts" value={promptLimit} options={globalPromptLimitOptions} onChange={setPromptLimit} />
+        <ChipGroup label="Minutes" value={minutes} options={globalMinuteOptions} onChange={setMinutes} />
+        <ChipGroup label="View" value={mode} options={globalViewOptions} onChange={setMode} />
+        <ChipGroup label="Scale" value={scale} options={globalScaleOptions} onChange={setScale} />
         <small>{visible.events.length} visible events / {visible.prompts.length} visible prompts</small>
       </div>
       <div className="global-chart-summary" aria-label="visible chart totals">
@@ -989,6 +1000,37 @@ function GlobalSummaryItem({ label, value }: { label: string; value: string }) {
     <div className="global-summary-item">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ChipGroup<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="chip-group" aria-label={label}>
+      <span>{label}</span>
+      <div className="chip-row">
+        {options.map((option) => (
+          <button
+            key={String(option.value)}
+            type="button"
+            className={option.value === value ? "chip active" : "chip"}
+            aria-pressed={option.value === value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

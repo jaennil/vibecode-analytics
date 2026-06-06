@@ -180,9 +180,9 @@ input {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 12px 0 16px;
-  overflow-x: auto;
 }
 
 .tabs button {
@@ -385,27 +385,57 @@ input {
 }
 
 .dashboard-global {
+  margin-top: 0;
+}
+
+.dashboard-daily {
   margin-top: 14px;
 }
 
 .global-chart-toolbar {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: end;
   margin-bottom: 10px;
   flex-wrap: wrap;
 }
 
-.global-chart-toolbar label {
-  min-width: 180px;
+.chip-group {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
-.global-chart-toolbar select {
-  min-height: 36px;
+.chip-group > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chip.active {
+  border-color: var(--fresh);
+  background: rgba(59, 130, 246, 0.18);
+  color: var(--text);
 }
 
 .global-chart-toolbar small {
-  margin: 0 0 10px auto;
+  margin: 0 0 6px auto;
 }
 
 .global-chart-summary {
@@ -856,6 +886,10 @@ th {
     border-radius: 8px;
   }
 
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .chart {
     height: 150px;
   }
@@ -898,8 +932,12 @@ th {
     display: grid;
   }
 
-  .global-chart-toolbar label {
+  .chip-group {
     min-width: 0;
+  }
+
+  .chip-row {
+    gap: 5px;
   }
 
   .global-chart-toolbar small {
