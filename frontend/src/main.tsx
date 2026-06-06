@@ -1002,14 +1002,16 @@ interface GlobalBarHover {
 function GlobalBarTooltip({ hover }: { hover: GlobalBarHover }) {
   return (
     <div className="global-bar-tooltip" style={{ left: hover.left, top: hover.top }}>
-      <strong>{new Date(hover.event.timestamp).toLocaleString()}</strong>
+      <strong className="chart-tooltip-title">{new Date(hover.event.timestamp).toLocaleString()}</strong>
       <div className="chart-tooltip-meta">{hover.event.source} / {hover.event.projectName} / {hover.event.sessionName}</div>
-      {visibleBreakdownRows(hover.event).map((row) => (
-        <div className="chart-tooltip-row" key={row.key}>
-          <span>{row.label}</span>
-          <b>{formatNumber(row.value)}</b>
-        </div>
-      ))}
+      <div className="chart-tooltip-rows">
+        {visibleBreakdownRows(hover.event).map((row) => (
+          <div className="chart-tooltip-row" key={row.key}>
+            <span>{row.label}</span>
+            <b>{formatNumber(row.value)}</b>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1190,9 +1192,9 @@ function globalBarHover(chart: echarts.ECharts | null, events: TokenEvent[], off
   }, null);
   const magnetRange = Math.min(52, Math.max(28, chart.getWidth() / Math.max(events.length * 2, 12)));
   if (!nearest || nearest.distance > magnetRange) return null;
-  const tooltipWidth = 240;
-  const tooltipHeight = 190;
-  const gap = 18;
+  const tooltipWidth = 320;
+  const tooltipHeight = 230;
+  const gap = 22;
   const right = offsetX + gap + tooltipWidth;
   const bottom = offsetY + gap + tooltipHeight;
   return {
@@ -1421,9 +1423,11 @@ function detailTooltip(params: unknown, events: TokenEvent[], prompts: Prompt[])
   const rows = visibleBreakdownRows(event);
   const promptCount = promptCountForEventWindow(prompts, event);
   return [
-    `<strong>${new Date(event.timestamp).toLocaleString()}</strong>`,
+    `<strong class="chart-tooltip-title">${new Date(event.timestamp).toLocaleString()}</strong>`,
+    `<div class="chart-tooltip-rows">`,
     ...rows.map((row) => `<div class="chart-tooltip-row"><span>${row.label}</span><b>${formatNumber(row.value)}</b></div>`),
     ...(promptCount ? [`<div class="chart-tooltip-row"><span>Prompts</span><b>${promptCount}</b></div>`] : []),
+    `</div>`,
   ].join("");
 }
 
@@ -1435,9 +1439,11 @@ function detailPromptTooltip(params: unknown, prompts: Prompt[]): string {
 
 function promptTooltip(prompt: Prompt): string {
   return [
-    `<strong>${escapeHtml(new Date(prompt.timestamp).toLocaleString())}</strong>`,
+    `<strong class="chart-tooltip-title">${escapeHtml(new Date(prompt.timestamp).toLocaleString())}</strong>`,
     `<div class="chart-tooltip-meta">User prompt</div>`,
+    `<div class="chart-tooltip-rows">`,
     `<div class="chart-tooltip-row"><span>Images</span><b>${formatNumber(prompt.imageCount || 0)}</b></div>`,
+    `</div>`,
     `<div class="chart-tooltip-text">${escapeHtml(prompt.text ? shortText(prompt.text, 240) : "Prompt text loads in the inspector.")}</div>`,
   ].join("");
 }
